@@ -1,0 +1,45 @@
+# Cosmic Origins sim server (ASTR 311): web viewer + run simulations from the browser.
+# Homelab: homelab-web network, port 8117, astr311.chrislawrence.ca
+name: gravity
+
+networks:
+  web:
+    external: true
+    name: homelab-web
+
+services:
+  gravity:
+    build: .
+    container_name: gravity
+    restart: unless-stopped
+    networks:
+      - web
+    ports:
+      - "8117:8000"
+    environment:
+      - PORT=8000
+      - PYTHONPATH=/app/src
+      - PYTHONUNBUFFERED=1
+    volumes:
+      # Bind mount web-viewer/replays so container and host share the same replays.
+      # Existing runs in web-viewer/replays are visible; new runs are saved there.
+      - ./web-viewer/replays:/app/web-viewer/replays
+    # GPU passthrough (requires NVIDIA Container Toolkit on host; optional for CPU-only runs)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/')\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+# Optional: use a named volume instead (replays live in Docker volume, not in web-viewer/replays):
+#   - replays:/app/web-viewer/replays
+# volumes:
+#   replays:
