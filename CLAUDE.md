@@ -134,7 +134,7 @@ docker compose up --build
 
 ### Type Hints
 
-All modules use `from __future__ import annotations` and full type annotations throughout. Numpy array shapes are documented in docstrings (e.g., `"shape (N, 2) or (N, 3)"`).
+The core gravity packages (`chris/src/gravity` and `unified/core/gravity`) use `from __future__ import annotations` and full type annotations throughout. Elsewhere in the repo, prefer that style when modifying or adding code. Numpy array shapes are documented in docstrings where relevant (e.g., `"shape (N, 2) or (N, 3)"`).
 
 ### Docstrings
 
