@@ -168,15 +168,20 @@ Key conservation law tolerances from tests:
 
 ## Configuration
 
-`GravityConfig` fields (in `unified/core/config.py` and mirrored in Chris's modules):
+`GravityConfig` fields in `unified/core/config.py`:
 
 | Field | Default | Description |
 |-------|---------|-------------|
+| `dim` | varies | Spatial dimensionality of the simulation |
 | `n_particles` | varies | Number of simulation bodies |
-| `softening` | ~0.1 | Gravitational softening length ε |
-| `dt` | 0.01 | Timestep |
-| `G` | 1.0 | Gravitational constant (dimensionless units) |
-| `use_gpu` | False | Enable CuPy/Numba GPU acceleration |
+| `time_step` | varies | Integration timestep |
+| `softening_length` | varies | Gravitational softening length ε |
+| `M_star` | varies | Central star mass |
+| `r_min` | varies | Minimum radius used for initialization |
+| `r_max` | varies | Maximum radius used for initialization |
+| `ic_type` | varies | Initial-condition profile/type selector |
+| `M_halo` | varies | Halo mass parameter |
+| `a_halo` | varies | Halo scale-length parameter |
 
 ## Replay Format
 
