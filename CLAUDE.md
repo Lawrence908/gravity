@@ -38,11 +38,11 @@ gravity/
 │   │   └── benchmark.py           # Performance profiling
 │   ├── web-viewer/                # Static HTML replay browser
 │   ├── tools/                     # sim_server.py, export, thin_replay utilities
-│   ├── docs/                      # 11 markdown documentation files
+│   ├── docs/                      # Markdown documentation files
 │   ├── pyproject.toml             # Build config, Python >=3.10
 │   ├── requirements.txt           # numpy, matplotlib, cupy-cuda12x
-│   ├── Dockerfile                 # nvidia/cuda:12.2.2-devel base, port 8117
-│   ├── compose.yaml               # GPU passthrough, health checks
+│   ├── Dockerfile                 # nvidia/cuda:12.2.2-devel base, exposes port 8000
+│   ├── compose.yaml               # Maps host port 8117→8000, GPU passthrough, health checks
 │   └── INSTRUCTIONS.md            # AI assistant guidelines for this sub-project
 │
 └── unified/                       # Collaborative web platform
@@ -52,7 +52,7 @@ gravity/
     ├── frontend/
     │   ├── index.html             # Dashboard with simulation picker
     │   ├── viewer.html            # Replay + real-time viewer
-    │   └── replays/               # Pre-computed .json replay files
+    │   └── replays/               # Bind-mounted at runtime; not checked into git
     ├── core/
     │   ├── gravity/               # Shared physics engine (mirrors chris/src/gravity)
     │   ├── common/                # Shared utilities (logging)
@@ -62,8 +62,8 @@ gravity/
     │   ├── ethan/app.py           # 3-body problem + Pluto system
     │   ├── jasper/app.py          # GPU Yoshida 4th-order + GR corrections
     │   └── brad/app.py            # Binary star template
-    ├── Dockerfile                 # python:3.12-slim, port 8124
-    └── compose.yaml               # Health checks, frontend/replays bind mount
+    ├── Dockerfile                 # python:3.12-slim, exposes port 8000
+    └── compose.yaml               # Maps host port 8124→8000, health checks, replays bind mount
 ```
 
 ## Development Commands
@@ -156,11 +156,11 @@ NumPy-style docstrings with section headers such as `Parameters`, `Returns`, and
 ## Physics Model
 
 - **Integrator**: Leapfrog (symplectic, energy-conserving) preferred; Euler available for comparison
-- **Force law**: Newtonian gravity with softening: `F = G*m1*m2 / (r² + ε²)^(3/2)`
+- **Acceleration law**: Softened Newtonian gravity per particle: `a_i = G * Σ_j m_j * (r_j - r_i) / (|r_j - r_i|² + ε²)^(3/2)`
 - **Softening parameter ε**: Prevents singularities at close range; tune via `GravityConfig.softening`
 - **Hernquist halo**: Optional static background potential for galaxy disk stability
 - **Diagnostics**: Total energy (KE + PE) and angular momentum are tracked and should conserve within acceptable drift
-- **Collision merging**: Inelastic mergers conserving momentum and volume (`collisions.py`)
+- **Collision merging**: Mass is conserved; momentum is conserved for particle–particle merges; star–particle merges leave the star's velocity unchanged (toy approximation) (`collisions.py`)
 
 Key conservation law tolerances from tests:
 - Energy drift: < 1% over simulation duration
@@ -185,17 +185,21 @@ Key conservation law tolerances from tests:
 
 ## Replay Format
 
-Replays are saved as JSON with the following structure:
+JSON replays are exported by `chris/tools/export_replay_to_json.py` and have this flat structure:
 
 ```json
 {
-  "metadata": { "n_particles": 100, "steps": 500, "dt": 0.01, ... },
-  "frames": [
-    { "positions": [[x,y], ...], "velocities": [[vx,vy], ...], "masses": [...] },
-    ...
-  ]
+  "positions": [[[x, y], ...], ...],
+  "steps": [0, 10, 20, ...],
+  "masses": [[m1, m2, ...], ...],
+  "dt": 0.01,
+  "n_particles": 100,
+  "n_snapshots": 500,
+  "variable_n": false
 }
 ```
+
+When `variable_n` is `true`, `masses` is also a per-snapshot list and `n_particles` is omitted.
 
 Binary snapshots use `.npz` format (numpy compressed). See `chris/docs/REPLAY_FORMAT.md` for full spec.
 
