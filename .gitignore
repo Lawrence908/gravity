@@ -28,3 +28,4 @@ outputs/
 
 # Replays from sim server (bind mount when using compose)
 replays/
+meetings/
