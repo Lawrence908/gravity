@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Queue &amp; logs – Gravity simulation</title>
+  <style>
+    :root {
+      --bg-dark: #0d0d12;
+      --panel-bg: rgba(18, 18, 24, 0.95);
+      --input-bg: #1e1e24;
+      --input-border: #3a3a45;
+      --input-focus: #4a6cf7;
+      --text: #e4e4e8;
+      --text-muted: #9ca3af;
+      --bar-bg: #0a0a0f;
+      --bar-border: #2a2a35;
+      --btn-bg: #2a2a35;
+      --btn-hover: #3a3a48;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background: var(--bg-dark); color: var(--text); padding: 16px; }
+    .nav { margin-bottom: 20px; }
+    .nav a { color: var(--input-focus); text-decoration: none; margin-right: 16px; }
+    .nav a:hover { text-decoration: underline; }
+    h1 { font-size: 1.35rem; margin: 0 0 16px 0; }
+    .grid { display: grid; grid-template-columns: minmax(280px, 360px) 1fr; gap: 20px; max-width: 1400px; }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+    .card {
+      background: var(--panel-bg);
+      border: 1px solid var(--bar-border);
+      border-radius: 10px;
+      padding: 16px;
+    }
+    .card h2 { font-size: 14px; font-weight: 600; margin: 0 0 12px 0; color: var(--text); }
+    #panel label { display: block; margin-top: 10px; margin-bottom: 2px; font-size: 12px; color: var(--text-muted); }
+    #panel label:first-of-type { margin-top: 0; }
+    #panel .row-inline { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+    #panel input[type="number"], #panel input[type="text"], #panel select {
+      width: 100%; padding: 6px 8px; background: var(--input-bg); border: 1px solid var(--input-border);
+      border-radius: 6px; color: var(--text); font-size: 13px;
+    }
+    #panel input:focus, #panel select:focus { outline: none; border-color: var(--input-focus); }
+    #panel .panel-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    #panel .replay-estimate { font-size: 11px; color: var(--text-muted); margin: 4px 0 8px 0; }
+    #panel .replay-estimate.warning { color: var(--warn, #c9a227); }
+    #panel .mass-ratio { font-size: 11px; color: var(--text-muted); margin: 2px 0 8px 0; }
+    #panel .run-name-hint { font-size: 11px; color: var(--text-muted); margin: 2px 0 8px 0; display: block; }
+    #panel .panel-hint { font-size: 11px; color: var(--text-muted); margin: 2px 0 6px 0; display: block; line-height: 1.35; }
+    #panel button[type="button"] {
+      margin-top: 14px; padding: 8px 16px; cursor: pointer; border-radius: 6px;
+      background: var(--btn-bg); border: 1px solid var(--input-border); color: var(--text); font-size: 13px;
+    }
+    #panel button[type="button"]:hover { background: var(--btn-hover); }
+    #runStatus { margin-top: 8px; font-size: 12px; color: var(--text-muted); min-height: 1.2em; }
+    #queueStatus { font-size: 13px; }
+    #queueStatus ul { list-style: none; margin: 0; padding: 0; }
+    #queueStatus li { padding: 6px 0; border-bottom: 1px solid var(--bar-border); }
+    #queueStatus li:last-child { border-bottom: none; }
+    #queueStatus .pct { font-variant-numeric: tabular-nums; color: var(--input-focus); margin-right: 8px; }
+    #queueStatus .err { color: #e57373; }
+    #queueStatus .done { color: var(--text-muted); }
+    #queueStatus .progress-wrap { background: var(--bar-bg); border-radius: 4px; height: 8px; overflow: hidden; margin-top: 4px; }
+    #queueStatus .progress-bar { height: 100%; background: var(--input-focus); transition: width 0.2s; }
+    #logOutput {
+      font-family: ui-monospace, monospace; font-size: 12px; line-height: 1.4; color: var(--text-muted);
+      background: var(--bar-bg); border: 1px solid var(--bar-border); border-radius: 6px;
+      padding: 12px; height: 320px; overflow: auto; white-space: pre-wrap; word-break: break-all; margin: 0;
+    }
+    #logOutput:empty::before { content: 'No run in progress. Start a simulation to see live output.'; color: var(--text-muted); }
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <a href="index.html">Hub</a>
+    <a href="viewer.html">Viewer</a>
+  </nav>
+  <h1>Queue &amp; logs</h1>
+  <div class="grid">
+    <div class="card">
+      <h2>New simulation</h2>
+      <p class="panel-hint" style="margin-bottom: 12px;">Set up a run: one heavy “star” at the centre and many lighter particles. When you hit Run, the sim will queue and you can watch it in the viewer when it’s done.</p>
+      <div id="panel">
+        <label>Spatial dimension</label>
+        <div class="row-inline">
+          <label><input type="radio" name="dim" value="2d"> 2D</label>
+          <label><input type="radio" name="dim" value="3d" checked> 3D</label>
+        </div>
+        <span class="panel-hint">Flat disk (2D) or full 3D space. 3D looks more like a galaxy.</span>
+        <label for="runIc">Initial conditions</label>
+        <select id="runIc">
+          <option value="disk">disk</option>
+          <option value="cloud">cloud</option>
+        </select>
+        <span class="panel-hint">Disk = particles start in a ring with orbits; cloud = more random spread. Disk is best for spiral-like runs.</span>
+        <div class="panel-row">
+          <div>
+            <label for="runN">Number of particles</label>
+            <input type="number" id="runN" min="1" max="10000" value="500">
+            <span class="panel-hint">More particles = richer picture, slower run. 1000–5000 is a good range.</span>
+          </div>
+          <div>
+            <label for="runSteps">Time steps</label>
+            <input type="number" id="runSteps" min="1" max="1000000" value="1000">
+            <span class="panel-hint">How long the sim runs. More steps = longer evolution (e.g. 20k–50k for orbits).</span>
+          </div>
+        </div>
+        <label for="runDt">Time step size (Δt)</label>
+        <input type="number" id="runDt" step="0.001" value="0.01">
+        <span class="panel-hint">Smaller = more accurate but slower. 0.01 is usually fine; drop to 0.005 if things look unstable.</span>
+        <label for="runReplayEvery">Snapshot every N steps</label>
+        <input type="number" id="runReplayEvery" min="1" max="1000" value="20">
+        <div id="runReplayEstimate" class="replay-estimate"></div>
+        <label for="runMassRatioSlider">Mass ratio (star : particle)</label>
+        <input type="range" id="runMassRatioSlider" min="2" max="5" step="0.01" value="3"
+          style="width:100%; accent-color: var(--input-focus);"
+          title="Star mass is 1; slider sets how much lighter each particle is. Larger ratio = lighter particles = more stable orbits.">
+        <span id="runMassRatio" class="mass-ratio">Ratio 1000 : 1  —  m_particle = 0.001 (star = 1)</span>
+        <div id="runMassInKg" class="mass-ratio" style="margin-top: 4px; line-height: 1.4;" aria-live="polite">Star: 1 M☉ ≈ 1.99×10³⁰ kg · Particle: ≈ 1.99×10²⁷ kg</div>
+        <span class="panel-hint">How much heavier the star is than each particle. Higher ratio = lighter particles = orbits stay stable longer. Sizes in the viewer scale with mass.</span>
+        <input type="hidden" id="runMParticle" value="">
+        <label for="runRmin">Min initial radius (r_min)</label>
+        <input type="number" id="runRmin" step="0.1" value="0.5" min="0.01">
+        <span class="panel-hint">Inner edge of the ring (disk only). Keep above 0.5 so particles don’t start on plunging orbits.</span>
+        <label for="runRmax">Max initial radius (r_max)</label>
+        <input type="number" id="runRmax" step="0.1" value="4" min="0.1">
+        <span class="panel-hint">Outer edge: particles start somewhere inside this distance from the star. Larger = start further out.</span>
+        <label for="runSoftening">Gravitational softening (ε)</label>
+        <input type="number" id="runSoftening" step="0.01" value="0.05">
+        <span class="panel-hint">Smooths gravity when particles get very close so nothing “blows up.” 0.05–0.1 is typical.</span>
+        <label for="runMHalo" title="Static Hernquist dark-matter halo mass (0 = no halo)">Dark matter halo mass</label>
+        <input type="range" id="runMHalo" min="0" max="50" step="0.5" value="0"
+          style="width:100%; accent-color: var(--input-focus);">
+        <span id="runMHaloLabel" class="mass-ratio">M_halo = 0 (off)</span>
+        <span class="panel-hint">Extra invisible mass that holds the disk in orbit (like in real galaxies). 0 = off; try 5–20 for spiral-style runs.</span>
+        <label for="runAHalo" title="Hernquist scale radius — controls how concentrated the halo is">Halo scale radius</label>
+        <input type="number" id="runAHalo" step="0.5" min="0.1" max="100" value="5">
+        <span class="panel-hint">How spread out the dark matter is. Often set to about half of r_max.</span>
+        <label for="runSeed">Random seed</label>
+        <input type="number" id="runSeed" value="42">
+        <span class="panel-hint">Same number = same initial layout every time (handy for comparing runs).</span>
+        <label for="runName">Run name</label>
+        <input type="text" id="runName" placeholder="" title="Leave empty for suggested name">
+        <span class="run-name-hint">Leave empty to use suggested name</span>
+        <div class="row-inline" style="margin-top: 8px;">
+          <label><input type="checkbox" id="runGpu"> Use GPU</label>
+          <label><input type="checkbox" id="runCollisions"> Enable collisions</label>
+        </div>
+        <span class="panel-hint">GPU = faster when you have many particles (needs a CUDA GPU). Collisions = particles can merge when very close; off = they pass through each other.</span>
+        <label for="runRCollide">Collision radius</label>
+        <input type="number" id="runRCollide" min="0.01" step="0.01" placeholder="auto">
+        <span class="panel-hint">How close two bodies must get to merge. Auto = a small safe value (only very close pairs merge).</span>
+        <button type="button" id="runBtn">Run simulation</button>
+        <div id="runStatus"></div>
+      </div>
+    </div>
+    <div>
+      <div class="card" style="margin-bottom: 16px;">
+        <h2>Queue status</h2>
+        <div id="queueStatus">
+          <ul id="queueStatusList"></ul>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Live log</h2>
+        <pre id="logOutput"></pre>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let apiBase = '';
+    let queuePollId = null;
+    let logPollId = null;
+    let currentJobId = null;
+
+    function suggestRunName() {
+      const n = document.getElementById('runN').value;
+      const steps = document.getElementById('runSteps').value;
+      // Default replay basename: expansion_<n>_<steps>.json (neutral wording; ic/dim are only in the API payload).
+      return ('expansion_' + n + '_' + steps).replace(/\s/g, '');
+    }
+
+    function updateReplayEstimate() {
+      const steps = parseInt(document.getElementById('runSteps').value, 10) || 1000;
+      const replayEvery = parseInt(document.getElementById('runReplayEvery').value, 10) || 20;
+      const n = parseInt(document.getElementById('runN').value, 10) || 500;
+      const snapshots = 1 + Math.floor(steps / replayEvery);
+      const estMB = ((snapshots * (n + 1) * 3 * 18) / (1024 * 1024)).toFixed(1);
+      const el = document.getElementById('runReplayEstimate');
+      el.textContent = snapshots.toLocaleString() + ' snapshots — est. ~' + estMB + ' MB';
+      el.classList.toggle('warning', snapshots > 2000 || (snapshots * (n + 1) * 3 * 18) > 100 * 1024 * 1024);
+    }
+
+    const M_SUN_KG = 1.989e30;  // 1 code mass unit = 1 solar mass
+
+    function formatMassKg(codeMass) {
+      if (codeMass <= 0) return '— kg';
+      const kg = codeMass * M_SUN_KG;
+      const exp = Math.floor(Math.log10(kg));
+      const mantissa = (kg / Math.pow(10, exp)).toFixed(2);
+      const digits = { '-': '⁻', '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹' };
+      const sup = String(exp).split('').map(function (c) { return digits[c] || c; }).join('');
+      return mantissa + '×10' + sup + ' kg';
+    }
+
+    function updateMassRatio() {
+      const logRatio = parseFloat(document.getElementById('runMassRatioSlider').value);
+      const ratio = Math.round(Math.pow(10, logRatio));
+      const mParticle = 1 / ratio;  // star mass fixed at 1
+      document.getElementById('runMParticle').value = mParticle;
+      const el = document.getElementById('runMassRatio');
+      el.textContent = 'Ratio ' + ratio.toLocaleString() + ' : 1  —  m_particle = ' + mParticle.toPrecision(3) + ' (star = 1)';
+      const kgEl = document.getElementById('runMassInKg');
+      if (kgEl) {
+        kgEl.innerHTML = 'Star: 1 M☉ ≈ ' + formatMassKg(1) + ' · Particle: ≈ ' + formatMassKg(mParticle);
+      }
+    }
+
+    function updateHaloLabel() {
+      const v = parseFloat(document.getElementById('runMHalo').value);
+      document.getElementById('runMHaloLabel').textContent = v > 0
+        ? 'M_halo = ' + v
+        : 'M_halo = 0 (off)';
+    }
+
+    function renderQueueStatus(data) {
+      const running = data.running || null;
+      const queue = data.queue || [];
+      const completed = data.completed || [];
+      const ul = document.getElementById('queueStatusList');
+      const items = [];
+      if (running) {
+        const pct = running.progress_pct || 0;
+        const isMine = currentJobId === running.job_id;
+        items.push('<li><span class="pct">' + pct + '%</span> Running: ' + running.name + (isMine ? ' <em>(yours)</em>' : '') + '</li>');
+        items.push('<li><div class="progress-wrap"><div class="progress-bar" style="width:' + pct + '%"></div></div></li>');
+        items.push('<li>Step ' + (running.step || 0).toLocaleString() + ' / ' + (running.total_steps || 0).toLocaleString() + '</li>');
+      }
+      queue.forEach(function (q) {
+        const isMine = currentJobId === q.job_id;
+        items.push('<li>Queued #' + q.position + ': ' + q.name + (isMine ? ' <em>(yours)</em>' : '') + '</li>');
+      });
+      const myCompleted = currentJobId && completed.find(function (c) { return c.job_id === currentJobId; });
+      if (myCompleted) {
+        if (myCompleted.ok) {
+          items.push('<li class="done">Done: ' + myCompleted.name + '</li>');
+        } else {
+          items.push('<li class="err">Failed: ' + (myCompleted.error || 'Unknown') + '</li>');
+        }
+      }
+      if (items.length === 0) items.push('<li class="done">No runs in progress.</li>');
+      ul.innerHTML = items.join('');
+    }
+
+    function fetchLogs() {
+      fetch(apiBase + '/api/run/logs')
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          const pre = document.getElementById('logOutput');
+          if (data.lines && data.lines.length > 0) {
+            pre.textContent = data.lines.join('\n');
+            pre.scrollTop = pre.scrollHeight;
+          } else if (!document.querySelector('#queueStatusList .pct')) {
+            pre.textContent = '';
+          }
+        })
+        .catch(function () {});
+    }
+
+    function pollStatus() {
+      fetch(apiBase + '/api/run/status')
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          renderQueueStatus(data);
+          if (data.running) fetchLogs();
+          if (currentJobId) {
+            const myCompleted = (data.completed || []).find(function (c) { return c.job_id === currentJobId; });
+            if (myCompleted) {
+              stopPolling();
+              const statusEl = document.getElementById('runStatus');
+              statusEl.textContent = myCompleted.ok ? 'Done: ' + myCompleted.name + ' — <a href="viewer.html">Open viewer</a>' : 'Error: ' + (myCompleted.error || 'Unknown');
+            }
+          }
+        })
+        .catch(function () {});
+    }
+
+    function startPolling() {
+      if (!queuePollId) queuePollId = setInterval(pollStatus, 1500);
+      if (!logPollId) logPollId = setInterval(fetchLogs, 1000);
+    }
+
+    function stopPolling() {
+      if (queuePollId) { clearInterval(queuePollId); queuePollId = null; }
+      if (logPollId) { clearInterval(logPollId); logPollId = null; }
+      currentJobId = null;
+    }
+
+    document.getElementById('runN').oninput = document.getElementById('runSteps').oninput = document.getElementById('runIc').oninput = function () {
+      document.getElementById('runName').placeholder = suggestRunName();
+      updateReplayEstimate();
+    };
+    document.querySelectorAll('input[name="dim"]').forEach(function (el) { el.oninput = function () { document.getElementById('runName').placeholder = suggestRunName(); }; });
+    document.getElementById('runReplayEvery').oninput = updateReplayEstimate;
+    document.getElementById('runMassRatioSlider').oninput = updateMassRatio;
+    document.getElementById('runMHalo').oninput = updateHaloLabel;
+    document.getElementById('runName').placeholder = suggestRunName();
+    updateMassRatio();
+    updateHaloLabel();
+    updateReplayEstimate();
+
+    document.getElementById('runBtn').onclick = function () {
+      const steps = parseInt(document.getElementById('runSteps').value, 10) || 1000;
+      const replayEvery = parseInt(document.getElementById('runReplayEvery').value, 10) || 20;
+      const n = parseInt(document.getElementById('runN').value, 10) || 500;
+      const snapshots = 1 + Math.floor(steps / replayEvery);
+      const estMB = (snapshots * (n + 1) * 3 * 18) / (1024 * 1024);
+      if (snapshots > 2000 || estMB > 100) {
+        if (!confirm('This replay will be very large (~' + Math.round(estMB) + ' MB) and may not load in the browser. Increase "Snapshot every N steps" or thin later with tools/thin_replay.py.')) return;
+      }
+      const dim = document.querySelector('input[name="dim"]:checked').value;
+      const name = document.getElementById('runName').value.trim() || suggestRunName();
+      const mParticleVal = document.getElementById('runMParticle').value.trim();
+      const mHalo = parseFloat(document.getElementById('runMHalo').value) || 0;
+      const aHalo = parseFloat(document.getElementById('runAHalo').value) || 5;
+      const payload = {
+        name: name,
+        dim: dim,
+        ic: document.getElementById('runIc').value,
+        n: n,
+        steps: steps,
+        dt: parseFloat(document.getElementById('runDt').value),
+        r_min: parseFloat(document.getElementById('runRmin').value),
+        r_max: parseFloat(document.getElementById('runRmax').value),
+        replay_every: replayEvery,
+        softening: parseFloat(document.getElementById('runSoftening').value),
+        seed: parseInt(document.getElementById('runSeed').value, 10),
+        gpu: document.getElementById('runGpu').checked,
+        M_star: 1,
+        collisions: document.getElementById('runCollisions').checked,
+        M_halo: mHalo,
+        a_halo: aHalo,
+      };
+      if (mParticleVal !== '') payload.m_particle = parseFloat(mParticleVal);
+      const rCollideVal = document.getElementById('runRCollide').value.trim();
+      if (rCollideVal !== '') payload.r_collide = parseFloat(rCollideVal);
+      const statusEl = document.getElementById('runStatus');
+      statusEl.textContent = 'Submitting…';
+      statusEl.innerHTML = '';
+      fetch(apiBase + '/api/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (body) {
+          if (!body.ok) {
+            statusEl.textContent = 'Error: ' + (body.error || 'Unknown');
+            return;
+          }
+          currentJobId = body.job_id;
+          statusEl.textContent = body.position_in_queue === 1 ? 'Running…' : 'Queued #' + body.position_in_queue + '…';
+          startPolling();
+          pollStatus();
+        })
+        .catch(function (err) {
+          statusEl.textContent = 'Error: ' + err.message;
+        });
+    };
+
+    pollStatus();
+  </script>
+</body>
+</html>

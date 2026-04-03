@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Gravity simulation – Viewer</title>
+  <style>
+    :root {
+      --bg-dark: #0d0d12;
+      --panel-bg: rgba(18, 18, 24, 0.95);
+      --input-bg: #1e1e24;
+      --input-border: #3a3a45;
+      --input-focus: #4a6cf7;
+      --text: #e4e4e8;
+      --text-muted: #9ca3af;
+      --bar-bg: #0a0a0f;
+      --bar-border: #2a2a35;
+      --btn-bg: #2a2a35;
+      --btn-hover: #3a3a48;
+    }
+    body { margin: 0; overflow: hidden; font-family: system-ui, -apple-system, sans-serif; background: var(--bg-dark); color: var(--text); }
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+    #main {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+    }
+    #canvas {
+      display: block;
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+    }
+    #sidebarWrap {
+      position: absolute;
+      top: 0;
+      right: 0;
+      height: 100%;
+      width: 312px;
+      display: flex;
+      flex-direction: row;
+      z-index: 20;
+      transition: width 0.2s ease;
+      overflow: hidden;
+    }
+    #sidebarWrap.closed {
+      width: 28px;
+    }
+    #panel {
+      width: 280px;
+      flex-shrink: 0;
+      height: 100%;
+      overflow-y: auto;
+      background: var(--panel-bg);
+      border-left: 1px solid var(--bar-border);
+      padding: 14px;
+      font-size: 13px;
+    }
+    #sidebarToggle {
+      width: 28px;
+      min-width: 28px;
+      flex-shrink: 0;
+      background: var(--bar-bg);
+      border: 1px solid var(--bar-border);
+      border-right: none;
+      border-radius: 6px 0 0 6px;
+      color: var(--text);
+      font-size: 16px;
+      line-height: 1;
+      cursor: pointer;
+      padding: 0;
+      align-self: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #sidebarToggle:hover { background: var(--btn-hover); }
+    #panel h3 { margin: 0 0 10px 0; font-size: 14px; font-weight: 600; color: var(--text); }
+    #panel section { margin-bottom: 14px; }
+    #panel select, #panel input[type="number"], #panel input[type="text"] {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 6px 8px;
+      margin: 2px 0 6px 0;
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 13px;
+    }
+    #panel select:focus, #panel input:focus {
+      outline: none;
+      border-color: var(--input-focus);
+    }
+    #panel .row-inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 4px 0; }
+    #panel .row-inline label { margin-right: 4px; }
+    #panel button {
+      padding: 6px 12px;
+      cursor: pointer;
+      margin-right: 6px;
+      margin-bottom: 4px;
+      border-radius: 6px;
+      background: var(--btn-bg);
+      border: 1px solid var(--input-border);
+      color: var(--text);
+      font-size: 13px;
+    }
+    #panel button:hover { background: var(--btn-hover); }
+    #panel input[type="checkbox"] {
+      appearance: none;
+      -webkit-appearance: none;
+      width: 1.1em;
+      height: 1.1em;
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 4px;
+      vertical-align: middle;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    #panel input[type="checkbox"]:checked {
+      background: var(--input-focus);
+      border-color: var(--input-focus);
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath fill='none' stroke='white' stroke-width='2' d='M2 6l3 3 5-6'/%3E%3C/svg%3E");
+      background-size: 75% 75%;
+      background-position: center;
+      background-repeat: no-repeat;
+    }
+    #panel input[type="radio"] {
+      appearance: none;
+      -webkit-appearance: none;
+      width: 1.1em;
+      height: 1.1em;
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 50%;
+      vertical-align: middle;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    #panel input[type="radio"]:checked {
+      border-color: var(--input-focus);
+      box-shadow: inset 0 0 0 0.3em var(--input-focus);
+    }
+    #panel .runStatus { margin-top: 8px; font-style: italic; min-height: 1.2em; color: var(--text-muted); }
+    #panel .mass-ratio { display: block; font-size: 11px; color: var(--text-muted); margin: -4px 0 8px 0; }
+    #panel .replay-estimate { font-size: 11px; color: var(--text-muted); margin: -2px 0 8px 0; }
+    #panel .replay-estimate.warning { color: var(--warn, #c9a227); }
+    #panel .run-name-hint { display: block; font-size: 11px; color: var(--text-muted); margin: -2px 0 8px 0; }
+
+    #controls {
+      flex: 0 0 auto;
+      position: relative;
+      z-index: 30;
+      background: var(--bar-bg);
+      border-top: 1px solid var(--bar-border);
+      color: var(--text);
+      padding: 10px 16px 12px;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    #controls .controls-left { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-left: 16px; font-size: 12px; }
+    #controls .controls-right { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-right: 16px; font-size: 12px; }
+    #controls .controls-left select,
+    #controls .controls-left button { font-size: 12px; padding: 3px 6px; }
+    #controls .controls-right button,
+    #controls .controls-right input[type="range"],
+    #controls .controls-right label { font-size: 12px; }
+    #controls .controls-right #trailOpacity { width: 64px; }
+    #controls .controls-center {
+      flex: 1 1 0;
+      min-width: 200px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      padding: 0 8px;
+    }
+    #controls .controls-center .slider-row { display: flex; align-items: center; gap: 10px; width: 100%; max-width: 480px; }
+    #controls .controls-center .slider-row #timeline { flex: 1; min-width: 0; height: 24px; }
+    #controls .controls-center .step-info-row { width: 100%; max-width: 480px; text-align: center; }
+    #controls .controls-center .play-row { display: flex; align-items: center; gap: 8px; }
+    #controls .bar-row { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+    #controls label { margin-right: 4px; color: var(--text-muted); }
+    #controls select {
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 6px;
+      color: var(--text);
+      padding: 4px 8px;
+      font-size: 13px;
+    }
+    #controls select:focus { outline: none; border-color: var(--input-focus); }
+    #controls button {
+      padding: 5px 10px;
+      cursor: pointer;
+      font-size: 13px;
+      border-radius: 6px;
+      background: var(--btn-bg);
+      border: 1px solid var(--input-border);
+      color: var(--text);
+    }
+    #controls button:hover { background: var(--btn-hover); }
+    #playBtn {
+      width: 36px;
+      height: 36px;
+      padding: 0;
+      border-radius: 50%;
+      background: #2563eb;
+      border: 1px solid #3b82f6;
+      color: #fff;
+      font-size: 14px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+    }
+    #playBtn:hover { background: #3b82f6; border-color: #60a5fa; }
+    #timeline { vertical-align: middle; accent-color: var(--input-focus); }
+    #stepInfo { color: var(--text-muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #replaySelect { min-width: 160px; }
+
+    /* Mobile: slider + play on top of bar; replay and view stay small at bottom corners */
+    @media (max-width: 768px) {
+      #controls {
+        padding: 10px 12px 10px;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: flex-start;
+      }
+      #controls .controls-center {
+        order: -1;
+        width: 100%;
+        flex-basis: 100%;
+        min-width: 0;
+        padding: 0 4px 4px;
+        border-bottom: 1px solid var(--bar-border);
+        margin-bottom: 2px;
+        padding-bottom: 8px;
+      }
+      #controls .controls-left {
+        order: 0;
+        margin-left: 12px;
+        margin-right: 0;
+        flex: 0 0 auto;
+      }
+      #controls .controls-right {
+        order: 0;
+        margin-left: auto;
+        margin-right: 12px;
+        flex: 0 0 auto;
+      }
+      #controls .controls-center .slider-row #timeline {
+        height: 28px;
+        min-height: 28px;
+        -webkit-tap-highlight-color: transparent;
+      }
+      #controls .controls-center .play-row {
+        -webkit-tap-highlight-color: transparent;
+      }
+      #playBtn {
+        width: 38px;
+        height: 38px;
+        font-size: 15px;
+        -webkit-tap-highlight-color: transparent;
+      }
+    }
+    /* Touch: allow canvas to receive touch for orbit without delaying */
+    @media (hover: none) and (pointer: coarse) {
+      #canvas { touch-action: none; }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="main">
+      <canvas id="canvas"></canvas>
+      <div id="sidebarWrap">
+        <button type="button" id="sidebarToggle" aria-label="Close sidebar">&#9654;</button>
+        <div id="panel">
+          <h3>Replay viewer</h3>
+          <section>
+            <p style="margin: 0 0 12px 0; color: var(--text-muted); font-size: 12px;">Load a replay below or run a new simulation from the Queue page.</p>
+            <a href="queue.html" style="display: inline-block; padding: 8px 14px; background: var(--btn-bg); border: 1px solid var(--input-border); border-radius: 6px; color: var(--text); text-decoration: none; font-size: 13px;">Run simulation</a>
+            <p id="scaleInfo" style="margin: 12px 0 0 0; font-size: 11px; color: var(--text-muted);" aria-live="polite">Scale —</p>
+          </section>
+        </div>
+      </div>
+    </div>
+    <div id="controls">
+      <div class="controls-left">
+        <select id="replaySelect" size="1">
+          <option value="">-- none --</option>
+        </select>
+        <button type="button" id="replayLoad">Load</button>
+        <button type="button" id="replayRefresh">Refresh</button>
+        <button type="button" id="replayDelete">Delete</button>
+      </div>
+      <div class="controls-center">
+        <div class="slider-row">
+          <label for="timeline">Step</label>
+          <input type="range" id="timeline" min="0" max="0" value="0">
+        </div>
+        <div class="step-info-row">
+          <span id="stepInfo">Load a replay (replay.json)</span>
+        </div>
+        <div class="play-row">
+          <button type="button" id="playBtn" aria-label="Play" title="Play">&#9654;</button>
+          <label for="speedSelect">Speed</label>
+          <select id="speedSelect">
+            <option value="0.5">0.5x</option>
+            <option value="1" selected>1x</option>
+            <option value="2">2x</option>
+            <option value="5">5x</option>
+            <option value="10">10x</option>
+            <option value="50">50x</option>
+            <option value="100">100x</option>
+            <option value="500">500x</option>
+            <option value="1000">1000x</option>
+          </select>
+        </div>
+      </div>
+      <div class="controls-right">
+        <span style="color: var(--text-muted);">Trails</span>
+        <input type="range" id="trailOpacity" min="0" max="100" value="10" title="Trail opacity">
+        <label for="trailOpacity" id="trailOpacityLabel" style="min-width: 2.5em;">10%</label>
+        <span style="color: var(--text-muted); margin-left: 8px;">View</span>
+        <button type="button" id="viewReset">Reset</button>
+        <button type="button" id="viewFront">Front</button>
+        <button type="button" id="viewBack">Back</button>
+        <button type="button" id="viewTop">Top-down</button>
+        <button type="button" id="viewSide">Side</button>
+        <button type="button" id="viewLock">Lock on</button>
+        <button type="button" id="viewGrid" title="Toggle reference grid for scale">Grid</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    const TRAIL_SIM_SECONDS = 2.0;
+    const TRAIL_MAX_POINTS = 500;
+    let scene, camera, renderer, controls, particleInstances, starMesh, replayData, trailLineMesh, trailHistory, lastTrailFrameIndex;
+    let playing = false;
+    let playAnimationId = null;
+    let playStartTime = 0;
+    let playStartIndex = 0;
+    let viewLockedOn = false;
+    const dummy = new THREE.Object3D();
+
+    let gridHelper = null;
+    const FOG_DENSITY = 0.018;
+    const BG_COLOR = 0x0a0a12;
+
+    // Map simulation coords to Three.js so the disk lies on the reference grid (XZ plane, Y up).
+    // Sim: disk in (x,y), z out-of-plane. Three: grid is XZ, Y up. So sim (x,y,z) -> Three (x, z, y).
+    function simToThree(p, is2D) {
+      if (is2D) return [p[0], 0, p[1]];
+      return [p[0], p[2] ?? 0, p[1]];
+    }
+
+    function init() {
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(BG_COLOR);
+      scene.fog = new THREE.FogExp2(BG_COLOR, FOG_DENSITY);
+      const main = document.getElementById('main');
+      camera = new THREE.PerspectiveCamera(60, main.clientWidth / main.clientHeight, 0.01, 10000);
+      camera.position.set(5, 4, 5);
+      camera.lookAt(0, 0, 0);
+
+      const gridSize = 60;
+      const gridDivisions = 30;
+      gridHelper = new THREE.GridHelper(gridSize, gridDivisions, 0x2a2a38, 0x1a1a24);
+      gridHelper.position.set(0, 0, 0);
+      gridHelper.visible = true;
+      scene.add(gridHelper);
+
+      renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('canvas'), antialias: true });
+      renderer.setSize(main.clientWidth, main.clientHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+      controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.05;
+      const controlsBar = document.getElementById('controls');
+      controlsBar.addEventListener('pointerenter', () => { controls.enabled = false; });
+      controlsBar.addEventListener('pointerleave', () => { controls.enabled = true; });
+
+      const defaultPosition = new THREE.Vector3(5, 4, 5);
+      const defaultTarget = new THREE.Vector3(0, 0, 0);
+      const viewLockBtn = document.getElementById('viewLock');
+      const setLockButtonLabel = () => { viewLockBtn.textContent = viewLockedOn ? 'Unlock' : 'Lock on'; };
+      document.getElementById('viewReset').onclick = () => {
+        viewLockedOn = false;
+        setLockButtonLabel();
+        camera.position.copy(defaultPosition);
+        controls.target.copy(defaultTarget);
+      };
+      document.getElementById('viewTop').onclick = () => {
+        viewLockedOn = false;
+        setLockButtonLabel();
+        camera.position.set(0, 12, 0);
+        controls.target.set(0, 0, 0);
+      };
+      document.getElementById('viewFront').onclick = () => {
+        viewLockedOn = false;
+        setLockButtonLabel();
+        camera.position.set(0, 4, 10);
+        controls.target.set(0, 0, 0);
+      };
+      document.getElementById('viewBack').onclick = () => {
+        viewLockedOn = false;
+        setLockButtonLabel();
+        camera.position.set(0, 4, -10);
+        controls.target.set(0, 0, 0);
+      };
+      document.getElementById('viewSide').onclick = () => {
+        viewLockedOn = false;
+        setLockButtonLabel();
+        camera.position.set(10, 4, 0);
+        controls.target.set(0, 0, 0);
+      };
+      viewLockBtn.onclick = () => {
+        if (!starMesh) return;
+        viewLockedOn = !viewLockedOn;
+        setLockButtonLabel();
+        if (viewLockedOn) {
+          const offset = new THREE.Vector3().subVectors(camera.position, controls.target);
+          controls.target.copy(starMesh.position);
+          camera.position.copy(starMesh.position).add(offset);
+        }
+      };
+      document.getElementById('viewGrid').onclick = () => {
+        if (gridHelper) {
+          gridHelper.visible = !gridHelper.visible;
+        }
+      };
+
+      window.addEventListener('resize', () => {
+        const main = document.getElementById('main');
+        camera.aspect = main.clientWidth / main.clientHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(main.clientWidth, main.clientHeight);
+      });
+      const sidebarWrap = document.getElementById('sidebarWrap');
+      const sidebarBtn = document.getElementById('sidebarToggle');
+      document.getElementById('sidebarToggle').onclick = () => {
+        sidebarWrap.classList.toggle('closed');
+        sidebarBtn.textContent = sidebarWrap.classList.contains('closed') ? '\u25C0' : '\u25B6';
+        sidebarBtn.setAttribute('aria-label', sidebarWrap.classList.contains('closed') ? 'Open sidebar' : 'Close sidebar');
+        window.dispatchEvent(new Event('resize'));
+      };
+      if (window.matchMedia('(max-width: 768px)').matches) {
+        sidebarWrap.classList.add('closed');
+        sidebarBtn.textContent = '\u25C0';
+        sidebarBtn.setAttribute('aria-label', 'Open sidebar');
+      }
+      const trailOpacityInput = document.getElementById('trailOpacity');
+      const trailOpacityLabel = document.getElementById('trailOpacityLabel');
+      if (trailOpacityInput && trailOpacityLabel) {
+        trailOpacityInput.oninput = () => {
+          const v = parseInt(trailOpacityInput.value, 10);
+          trailOpacityLabel.textContent = v + '%';
+          if (trailLineMesh && trailLineMesh.material.uniforms && trailLineMesh.material.uniforms.uTrailOpacity) {
+            trailLineMesh.material.uniforms.uTrailOpacity.value = v / 100;
+          }
+        };
+      }
+    }
+
+    function createTrailMaterial() {
+      return new THREE.ShaderMaterial({
+        transparent: true,
+        depthWrite: false,
+        uniforms: {
+          uTrailOpacity: { value: 0.1 },
+        },
+        vertexShader: `
+          attribute float alpha;
+          varying float vAlpha;
+          uniform float uTrailOpacity;
+          void main() {
+            vAlpha = alpha * uTrailOpacity;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          varying float vAlpha;
+          void main() {
+            gl_FragColor = vec4(1.0, 1.0, 1.0, vAlpha);
+          }
+        `,
+      });
+    }
+
+    function buildTrailGeometry(nParticles) {
+      const maxSegments = nParticles * (TRAIL_MAX_POINTS - 1);
+      const vertexCount = maxSegments * 2;
+      const positions = new Float32Array(vertexCount * 3);
+      const alphas = new Float32Array(vertexCount);
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geo.setAttribute('alpha', new THREE.BufferAttribute(alphas, 1));
+      geo.drawRange = { start: 0, count: 0 };
+      return geo;
+    }
+
+    function updateTrailMesh(trailHistory, is2D, nParticles) {
+      if (!trailLineMesh || !trailHistory) return;
+      const posAttr = trailLineMesh.geometry.getAttribute('position');
+      const alphaAttr = trailLineMesh.geometry.getAttribute('alpha');
+      let segmentCount = 0;
+      for (let i = 0; i < nParticles; i++) {
+        const trail = trailHistory[i];
+        const L = trail.length;
+        if (L < 2) continue;
+        const stepMin = trail[0].step;
+        const stepMax = trail[L - 1].step;
+        const stepSpan = Math.max(1, stepMax - stepMin);
+        for (let j = 0; j < L - 1; j++) {
+          const a = trail[j].pos;
+          const b = trail[j + 1].pos;
+          const t0 = (trail[j].step - stepMin) / stepSpan;
+          const t1 = (trail[j + 1].step - stepMin) / stepSpan;
+          const idx = segmentCount * 2;
+          posAttr.array[idx * 3] = a[0];
+          posAttr.array[idx * 3 + 1] = a[1];
+          posAttr.array[idx * 3 + 2] = a[2] ?? 0;
+          posAttr.array[(idx + 1) * 3] = b[0];
+          posAttr.array[(idx + 1) * 3 + 1] = b[1];
+          posAttr.array[(idx + 1) * 3 + 2] = b[2] ?? 0;
+          alphaAttr.array[idx] = t0;
+          alphaAttr.array[idx + 1] = t1;
+          segmentCount++;
+        }
+      }
+      posAttr.needsUpdate = true;
+      alphaAttr.needsUpdate = true;
+      trailLineMesh.geometry.setDrawRange(0, segmentCount * 2);
+    }
+
+    const BASE_STAR_RADIUS = 0.15;
+    const MIN_PARTICLE_RADIUS = 0.02;
+
+    function computeParticleRadius(starMass, particleMass) {
+      if (!starMass || !particleMass || starMass <= 0 || particleMass <= 0) return 0.04;
+      const r = BASE_STAR_RADIUS * Math.pow(particleMass / starMass, 1 / 3);
+      return Math.max(MIN_PARTICLE_RADIUS, r);
+    }
+
+    function buildParticles(positions, is2D, maxCapacity, particleRadius) {
+      const n = positions.length - 1;
+      if (n <= 0) return null;
+      const capacity = maxCapacity !== undefined ? Math.max(maxCapacity, n) : n;
+      const radius = particleRadius || 0.04;
+      const geo = new THREE.SphereGeometry(1, 8, 6);
+      const mat = new THREE.MeshBasicMaterial({ color: 0x5599ff });
+      const mesh = new THREE.InstancedMesh(geo, mat, capacity);
+      mesh.count = n;
+      for (let i = 0; i < n; i++) {
+        const p = positions[i + 1];
+        const t = simToThree(p, is2D);
+        dummy.position.set(t[0], t[1], t[2]);
+        dummy.scale.set(radius, radius, radius);
+        dummy.updateMatrix();
+        mesh.setMatrixAt(i, dummy.matrix);
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+      mesh.frustumCulled = false;
+      return mesh;
+    }
+
+    let currentParticleRadius = 0.04;
+
+    function buildStar(positions, is2D, starRadius) {
+      const t = simToThree(positions[0], is2D);
+      const r = starRadius || 0.08;
+      const geo = new THREE.SphereGeometry(r, 16, 12);
+      const mat = new THREE.MeshBasicMaterial({ color: 0xffdd00 });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(t[0], t[1], t[2]);
+      mesh.frustumCulled = false;
+      return mesh;
+    }
+
+    function setFrameIndex(idx) {
+      if (!replayData) return;
+      const tl = document.getElementById('timeline');
+      const n = replayData.n_snapshots;
+      idx = Math.max(0, Math.min(idx, n - 1));
+      tl.value = idx;
+      updateParticles(idx);
+      document.getElementById('stepInfo').textContent =
+        `Step ${replayData.steps[idx]} / ${replayData.steps[replayData.steps.length - 1]}  (snapshot ${idx + 1}/${replayData.n_snapshots})  dt=${replayData.dt}`;
+    }
+
+    function updateParticles(frameIndex) {
+      if (!replayData) return;
+      const pos = replayData.positions[frameIndex];
+      const is2D = pos[0].length === 2;
+      const n = pos.length - 1;
+      const stepsArr = replayData.steps;
+      const currentStep = stepsArr ? stepsArr[frameIndex] : frameIndex * 100;
+      const dt = replayData.dt || 0.01;
+      const trailSimSteps = Math.min(TRAIL_MAX_POINTS, Math.max(20, Math.round(TRAIL_SIM_SECONDS / dt)));
+
+      if (trailHistory && n > 0 && n <= trailHistory.length) {
+        const isRewinding = lastTrailFrameIndex !== undefined && frameIndex < lastTrailFrameIndex;
+        if (isRewinding) {
+          for (let i = 0; i < n; i++) {
+            trailHistory[i] = trailHistory[i].filter((entry) => entry.step <= currentStep);
+          }
+        }
+        const startF = lastTrailFrameIndex === undefined ? frameIndex : Math.min(lastTrailFrameIndex + 1, frameIndex);
+        for (let f = startF; f <= frameIndex; f++) {
+          const step = stepsArr ? stepsArr[f] : f * 100;
+          const pf = replayData.positions[f];
+          const is2Df = pf[0].length === 2;
+          const nf = pf.length - 1;
+          for (let i = 0; i < Math.min(n, nf); i++) {
+            const p = pf[i + 1];
+            trailHistory[i].push({ pos: simToThree(p, is2Df), step });
+          }
+        }
+        for (let i = 0; i < n; i++) {
+          while (trailHistory[i].length > 0 && trailHistory[i][0].step < currentStep - trailSimSteps) {
+            trailHistory[i].shift();
+          }
+          while (trailHistory[i].length > TRAIL_MAX_POINTS) trailHistory[i].shift();
+        }
+        lastTrailFrameIndex = frameIndex;
+        updateTrailMesh(trailHistory, is2D, n);
+      }
+      if (particleInstances) {
+        particleInstances.count = n;
+        const r = currentParticleRadius;
+        for (let i = 0; i < n; i++) {
+          const t = simToThree(pos[i + 1], is2D);
+          dummy.position.set(t[0], t[1], t[2]);
+          dummy.scale.set(r, r, r);
+          dummy.updateMatrix();
+          particleInstances.setMatrixAt(i, dummy.matrix);
+        }
+        particleInstances.instanceMatrix.needsUpdate = true;
+      }
+      if (starMesh) {
+        const tStar = simToThree(pos[0], is2D);
+        starMesh.position.set(tStar[0], tStar[1], tStar[2]);
+        if (viewLockedOn) {
+          const offset = camera.position.clone().sub(controls.target);
+          controls.target.copy(starMesh.position);
+          camera.position.copy(starMesh.position).add(offset);
+        }
+      }
+    }
+
+    function applyReplayData(data) {
+      // Use actual frame count so truncated or hand-edited JSON never runs past the array
+      const numFrames = data.positions.length;
+      data.n_snapshots = numFrames;
+      if (!Array.isArray(data.steps) || data.steps.length !== numFrames) {
+        data.steps = Array.from({ length: numFrames }, (_, i) => i * (data.replay_every ?? 20));
+      }
+      if (data.dt == null) data.dt = 0.01;
+      replayData = data;
+      const frameIndex = 0;
+      const is2D = data.positions[0][0].length === 2;
+      let maxParticles = 0;
+      for (let f = 0; f < data.n_snapshots; f++) {
+        const n = data.positions[f].length - 1;
+        if (n > maxParticles) maxParticles = n;
+      }
+      if (trailLineMesh) {
+        scene.remove(trailLineMesh);
+        trailLineMesh.geometry.dispose();
+        trailLineMesh.material.dispose();
+        trailLineMesh = null;
+      }
+      trailHistory = Array.from({ length: maxParticles }, () => []);
+      lastTrailFrameIndex = -1;
+      trailLineMesh = new THREE.LineSegments(buildTrailGeometry(maxParticles), createTrailMaterial());
+      trailLineMesh.frustumCulled = false;
+      const trailOpacityEl = document.getElementById('trailOpacity');
+      if (trailOpacityEl && trailLineMesh.material.uniforms) {
+        trailLineMesh.material.uniforms.uTrailOpacity.value = parseInt(trailOpacityEl.value, 10) / 100;
+      }
+      scene.add(trailLineMesh);
+      const pos0 = data.positions[frameIndex];
+      const is2D0 = pos0[0].length === 2;
+      const n0 = pos0.length - 1;
+      const step0 = (data.steps && data.steps[frameIndex] != null) ? data.steps[frameIndex] : frameIndex * 100;
+      for (let i = 0; i < n0; i++) {
+        const p = pos0[i + 1];
+        trailHistory[i].push({ pos: simToThree(p, is2D0), step: step0 });
+      }
+      lastTrailFrameIndex = frameIndex;
+      // Compute mass-proportional sizes
+      let starMass = 1, particleMass = 0;
+      if (data.masses) {
+        if (data.variable_n && Array.isArray(data.masses[0])) {
+          starMass = data.masses[0][0] || 1;
+          particleMass = data.masses[0].length > 1 ? data.masses[0][1] : 0;
+        } else if (Array.isArray(data.masses)) {
+          starMass = data.masses[0] || 1;
+          particleMass = data.masses.length > 1 ? data.masses[1] : 0;
+        }
+      }
+      currentParticleRadius = computeParticleRadius(starMass, particleMass);
+      const starRadius = BASE_STAR_RADIUS;
+
+      if (particleInstances) scene.remove(particleInstances);
+      if (starMesh) scene.remove(starMesh);
+      particleInstances = buildParticles(data.positions[frameIndex], is2D, maxParticles, currentParticleRadius);
+      starMesh = buildStar(data.positions[frameIndex], is2D, starRadius);
+      if (particleInstances) scene.add(particleInstances);
+      scene.add(starMesh);
+
+      const tl = document.getElementById('timeline');
+      tl.min = 0;
+      tl.max = Math.max(0, data.n_snapshots - 1);
+      tl.value = 0;
+      tl.oninput = () => {
+        const idx = parseInt(tl.value, 10);
+        setFrameIndex(idx);
+      };
+
+      let maxRadius = 0;
+      for (let i = 0; i < pos0.length; i++) {
+        const p = pos0[i];
+        const r = Math.sqrt(p[0] * p[0] + p[1] * p[1] + (p[2] !== undefined ? p[2] * p[2] : 0));
+        if (r > maxRadius) maxRadius = r;
+      }
+      const scaleEl = document.getElementById('scaleInfo');
+      const ratioStr = particleMass > 0 ? '  |  Mass ratio: ' + Math.round(starMass / particleMass) + ':1' : '';
+      if (scaleEl) scaleEl.textContent = 'Extent: ~' + maxRadius.toFixed(1) + ' units' + ratioStr;
+
+      const playBtn = document.getElementById('playBtn');
+      const speedSelect = document.getElementById('speedSelect');
+          playBtn.onclick = () => {
+            playing = !playing;
+            playBtn.innerHTML = playing ? '&#9208;' : '&#9654;';
+            playBtn.setAttribute('aria-label', playing ? 'Pause' : 'Play');
+            playBtn.setAttribute('title', playing ? 'Pause' : 'Play');
+            if (playing) {
+              playStartTime = performance.now();
+              playStartIndex = parseInt(tl.value, 10);
+              function tick(now) {
+                if (!playing) return;
+                playAnimationId = requestAnimationFrame(tick);
+                const speed = parseFloat(speedSelect.value);
+                const n = replayData.n_snapshots;
+                if (n <= 1) return;
+                const elapsed = (now - playStartTime) / 1000;
+                const floatIdx = playStartIndex + elapsed * speed;
+                let idx = Math.floor(floatIdx) % n;
+                if (idx < 0) idx += n;
+                setFrameIndex(idx);
+              }
+              playAnimationId = requestAnimationFrame(tick);
+            } else {
+              if (playAnimationId != null) cancelAnimationFrame(playAnimationId);
+              playStartIndex = parseInt(tl.value, 10);
+            }
+          };
+
+      const nParts = data.variable_n ? data.positions[0].length - 1 : (data.n_particles || data.positions[0].length - 1);
+      document.getElementById('stepInfo').textContent =
+        `Step ${(data.steps && data.steps[0]) != null ? data.steps[0] : 0}  (${data.n_snapshots} snapshots, ${nParts} particles)  dt=${data.dt}`;
+    }
+
+    function loadReplay(url) {
+      const u = url || 'replay.json';
+      const stepEl = document.getElementById('stepInfo');
+      stepEl.textContent = 'Loading…';
+      fetch(u)
+        .then(r => {
+          if (!r.ok) throw new Error(r.status + ' ' + r.statusText);
+          return r.json();
+        })
+        .then(data => {
+          if (!data || !Array.isArray(data.positions) || data.positions.length === 0) {
+            throw new Error('Invalid replay format');
+          }
+          applyReplayData(data);
+        })
+        .catch(err => {
+          stepEl.textContent = 'Load failed: ' + (err.message || String(err));
+        });
+    }
+
+    // Resolve API/replay base from current path so it works at site root or under a subpath (e.g. /viewer.html vs /app/viewer.html)
+    const pathname = window.location.pathname || '/';
+    const lastSlash = pathname.lastIndexOf('/');
+    const apiBase = lastSlash <= 0 ? '' : pathname.slice(0, lastSlash + 1);
+    function replayUrl(name) {
+      return (apiBase ? apiBase.replace(/\/$/, '') : '') + '/replays/' + name + '.json';
+    }
+    function fetchReplays() {
+      const url = (apiBase ? apiBase.replace(/\/$/, '') : '') + '/api/replays';
+      return fetch(url)
+        .then(r => {
+          if (!r.ok) throw new Error(r.status + ' ' + r.statusText);
+          return r.json();
+        })
+        .then(list => {
+          const sel = document.getElementById('replaySelect');
+          sel.innerHTML = '<option value="">-- none --</option>';
+          (list || []).forEach(r => {
+            const opt = document.createElement('option');
+            opt.value = r.name;
+            opt.textContent = r.name + (r.size_kb != null ? ' (' + (r.size_kb / 1024).toFixed(1) + ' MB)' : '');
+            sel.appendChild(opt);
+          });
+          return list;
+        });
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    init();
+    (function initPanel() {
+      document.getElementById('replayLoad').onclick = () => {
+        const name = document.getElementById('replaySelect').value;
+        if (!name) return;
+        loadReplay(replayUrl(name));
+      };
+      document.getElementById('replaySelect').onchange = () => {
+        const name = document.getElementById('replaySelect').value;
+        if (name) loadReplay(replayUrl(name));
+      };
+      document.getElementById('replayRefresh').onclick = () => {
+        fetchReplays()
+          .catch(() => { document.getElementById('stepInfo').textContent = 'Replay list unavailable (check server)'; });
+      };
+      document.getElementById('replayDelete').onclick = () => {
+        const name = document.getElementById('replaySelect').value;
+        if (!name || !confirm('Delete replay "' + name + '"?')) return;
+        const deleteUrl = (apiBase ? apiBase.replace(/\/$/, '') : '') + '/api/replays/' + encodeURIComponent(name);
+        fetch(deleteUrl, { method: 'DELETE' })
+          .then(r => r.json())
+          .then(body => { if (body.ok) return fetchReplays(); })
+          .catch(() => {});
+      };
+
+      fetchReplays()
+        .then(list => {
+          if (list && list.length > 0) loadReplay(replayUrl(list[0].name));
+          else document.getElementById('stepInfo').textContent = 'No replays yet — run a sim from Queue or add replay.json';
+        })
+        .catch(() => {
+          document.getElementById('stepInfo').textContent = 'Replay list unavailable — is the sim server running?';
+          loadReplay(replayUrl('replay'));
+        });
+    })();
+    animate();
+  </script>
+</body>
+</html>

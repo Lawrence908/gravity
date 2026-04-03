@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Gravity simulation – ASTR 311</title>
+  <style>
+    :root {
+      --bg-dark: #0d0d12;
+      --panel-bg: rgba(18, 18, 24, 0.95);
+      --input-bg: #1e1e24;
+      --input-border: #3a3a45;
+      --input-focus: #4a6cf7;
+      --text: #e4e4e8;
+      --text-muted: #9ca3af;
+      --bar-bg: #0a0a0f;
+      --bar-border: #2a2a35;
+      --btn-bg: #2a2a35;
+      --btn-hover: #3a3a48;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg-dark);
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    h1 {
+      font-size: clamp(1.5rem, 4vw, 2rem);
+      font-weight: 600;
+      margin: 0 0 8px 0;
+      color: var(--text);
+    }
+    .tagline {
+      color: var(--text-muted);
+      font-size: 14px;
+      margin-bottom: 32px;
+    }
+    .nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      justify-content: center;
+    }
+    .nav a {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 16px 24px;
+      background: var(--btn-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 10px;
+      color: var(--text);
+      text-decoration: none;
+      font-size: 15px;
+      font-weight: 500;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .nav a:hover {
+      background: var(--btn-hover);
+      border-color: var(--input-focus);
+    }
+    .nav a .icon { font-size: 1.4em; }
+  </style>
+</head>
+<body>
+  <h1>Gravity simulation</h1>
+  <p class="tagline">N-body dynamics – run simulations and view replays</p>
+  <nav class="nav">
+    <a href="queue.html"><span class="icon">&#128260;</span> Queue &amp; logs</a>
+    <a href="viewer.html"><span class="icon">&#128640;</span> Open viewer</a>
+  </nav>
+</body>
+</html>
