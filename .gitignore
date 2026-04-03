@@ -1,0 +1,30 @@
+# Local secrets (compose: SIMLAB_PASSWORD)
+.env
+
+# Virtual environments
+.venv/
+venv/
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Packaging / build
+.build/
+build/
+dist/
+*.egg-info/
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Outputs (can be narrowed later if you want to track .gitkeep only)
+outputs/
+
+# Replays from sim server (bind mount when using compose)
+replays/
