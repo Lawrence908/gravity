@@ -138,7 +138,7 @@ All modules use `from __future__ import annotations` and full type annotations t
 
 ### Docstrings
 
-Google-style docstrings with `Parameters`, `Returns`, and `Examples` sections. Inline physics comments explain equations (softening, leapfrog, Hernquist potential).
+NumPy-style docstrings with section headers such as `Parameters`, `Returns`, and `Examples` (using underlined section separators where applicable) are the preferred convention going forward, matching the core gravity modules. Inline physics comments explain equations (softening, leapfrog, Hernquist potential).
 
 ### Key Abstractions
 
