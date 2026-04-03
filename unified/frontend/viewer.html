@@ -1,0 +1,1168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Gravity Simulation — Unified Viewer</title>
+  <style>
+    :root {
+      --bg-dark: #0d0d12;
+      --panel-bg: rgba(18, 18, 24, 0.95);
+      --input-bg: #1e1e24;
+      --input-border: #3a3a45;
+      --input-focus: #4a6cf7;
+      --text: #e4e4e8;
+      --text-muted: #9ca3af;
+      --bar-bg: #0a0a0f;
+      --bar-border: #2a2a35;
+      --btn-bg: #2a2a35;
+      --btn-hover: #3a3a48;
+      --accent: #4a6cf7;
+      --accent-hover: #5b7df8;
+      --danger: #ef4444;
+      --success: #22c55e;
+      --warn: #c9a227;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; overflow: hidden; font-family: system-ui, -apple-system, sans-serif; background: var(--bg-dark); color: var(--text); }
+    #app { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+    #main { flex: 1; min-height: 0; position: relative; }
+    #canvas { display: block; position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+
+    /* Mode indicator */
+    #modeIndicator {
+      position: absolute; top: 12px; left: 12px; z-index: 25;
+      padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.05em; pointer-events: none;
+    }
+    #modeIndicator.replay { background: rgba(74, 108, 247, 0.3); border: 1px solid rgba(74, 108, 247, 0.5); color: #93aaf8; }
+    #modeIndicator.realtime { background: rgba(34, 197, 94, 0.3); border: 1px solid rgba(34, 197, 94, 0.5); color: #86efac; }
+
+    /* Performance HUD */
+    #perfHud {
+      position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 25;
+      background: rgba(10, 10, 15, 0.8); border: 1px solid var(--bar-border); border-radius: 8px;
+      padding: 6px 14px; font-size: 11px; color: var(--text-muted); display: none;
+      font-family: 'SF Mono', 'Fira Code', monospace; white-space: nowrap;
+    }
+    #perfHud span { margin: 0 8px; }
+    #perfHud .val { color: var(--text); font-weight: 500; }
+
+    /* Sidebar */
+    #sidebarWrap {
+      position: absolute; top: 0; right: 0; height: 100%; width: 332px;
+      display: flex; flex-direction: row; z-index: 20; transition: width 0.2s ease; overflow: hidden;
+    }
+    #sidebarWrap.closed { width: 28px; }
+    #panel {
+      width: 300px; flex-shrink: 0; height: 100%; overflow-y: auto;
+      background: var(--panel-bg); border-left: 1px solid var(--bar-border);
+      padding: 14px; font-size: 13px;
+    }
+    #sidebarToggle {
+      width: 28px; min-width: 28px; flex-shrink: 0;
+      background: var(--bar-bg); border: 1px solid var(--bar-border); border-right: none;
+      border-radius: 6px 0 0 6px; color: var(--text); font-size: 16px; line-height: 1;
+      cursor: pointer; padding: 0; align-self: center;
+      display: flex; align-items: center; justify-content: center;
+    }
+    #sidebarToggle:hover { background: var(--btn-hover); }
+    #panel h3 { margin: 0 0 10px 0; font-size: 14px; font-weight: 600; }
+    #panel section { margin-bottom: 14px; }
+    #panel label { font-size: 12px; color: var(--text-muted); display: block; margin-bottom: 2px; }
+    #panel select, #panel input[type="number"], #panel input[type="text"] {
+      width: 100%; padding: 6px 8px; margin: 2px 0 6px 0;
+      background: var(--input-bg); border: 1px solid var(--input-border);
+      border-radius: 6px; color: var(--text); font-size: 13px;
+    }
+    #panel select:focus, #panel input:focus { outline: none; border-color: var(--input-focus); }
+    #panel button {
+      padding: 6px 12px; cursor: pointer; margin-right: 6px; margin-bottom: 4px;
+      border-radius: 6px; background: var(--btn-bg); border: 1px solid var(--input-border);
+      color: var(--text); font-size: 13px;
+    }
+    #panel button:hover { background: var(--btn-hover); }
+    #panel button.primary { background: var(--accent); border-color: var(--accent); }
+    #panel button.primary:hover { background: var(--accent-hover); }
+    #panel button.danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+    #panel .row-inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 4px 0; }
+    #panel .hint { font-size: 11px; color: var(--text-muted); margin: -2px 0 8px 0; }
+
+    /* Divider */
+    .divider { border: none; border-top: 1px solid var(--bar-border); margin: 12px 0; }
+
+    /* Body list */
+    #bodyList { max-height: 200px; overflow-y: auto; font-size: 12px; margin: 6px 0; }
+    #bodyList .body-item {
+      display: flex; align-items: center; gap: 6px; padding: 3px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+    #bodyList .body-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    #bodyList .body-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #bodyList .body-mass { color: var(--text-muted); font-family: monospace; font-size: 11px; }
+
+    /* Bottom controls bar */
+    #controls {
+      flex: 0 0 auto; position: relative; z-index: 30;
+      background: var(--bar-bg); border-top: 1px solid var(--bar-border);
+      color: var(--text); padding: 10px 16px 12px; font-size: 13px;
+      display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+    }
+    #controls .controls-left { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-left: 16px; font-size: 12px; }
+    #controls .controls-right { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-right: 16px; font-size: 12px; }
+    #controls .controls-center {
+      flex: 1 1 0; min-width: 200px; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 0 8px;
+    }
+    #controls .controls-center .slider-row { display: flex; align-items: center; gap: 10px; width: 100%; max-width: 480px; }
+    #controls .controls-center .slider-row #timeline { flex: 1; min-width: 0; height: 24px; }
+    #controls .controls-center .step-info-row { width: 100%; max-width: 480px; text-align: center; }
+    #controls .controls-center .play-row { display: flex; align-items: center; gap: 8px; }
+    #controls label { margin-right: 4px; color: var(--text-muted); }
+    #controls select {
+      background: var(--input-bg); border: 1px solid var(--input-border); border-radius: 6px;
+      color: var(--text); padding: 4px 8px; font-size: 13px;
+    }
+    #controls select:focus { outline: none; border-color: var(--input-focus); }
+    #controls button {
+      padding: 5px 10px; cursor: pointer; font-size: 13px; border-radius: 6px;
+      background: var(--btn-bg); border: 1px solid var(--input-border); color: var(--text);
+    }
+    #controls button:hover { background: var(--btn-hover); }
+    #playBtn {
+      width: 36px; height: 36px; padding: 0; border-radius: 50%;
+      background: #2563eb; border: 1px solid #3b82f6; color: #fff; font-size: 14px;
+      display: inline-flex; align-items: center; justify-content: center; line-height: 1;
+    }
+    #playBtn:hover { background: #3b82f6; border-color: #60a5fa; }
+    #timeline { vertical-align: middle; accent-color: var(--input-focus); }
+    #stepInfo { color: var(--text-muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #replaySelect { min-width: 160px; }
+    #trailOpacity { width: 64px; }
+
+    @media (max-width: 768px) {
+      #controls { padding: 10px 12px; gap: 10px; flex-wrap: wrap; align-items: flex-start; }
+      #controls .controls-center { order: -1; width: 100%; flex-basis: 100%; min-width: 0; padding: 0 4px 4px; border-bottom: 1px solid var(--bar-border); margin-bottom: 2px; padding-bottom: 8px; }
+      #controls .controls-left { order: 0; margin-left: 12px; flex: 0 0 auto; }
+      #controls .controls-right { order: 0; margin-left: auto; margin-right: 12px; flex: 0 0 auto; }
+      #sidebarWrap { width: 28px; }
+      #sidebarWrap:not(.closed) { width: 280px; }
+    }
+    @media (hover: none) and (pointer: coarse) { #canvas { touch-action: none; } }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div id="main">
+      <canvas id="canvas"></canvas>
+
+      <div id="modeIndicator" class="replay">Replay</div>
+
+      <div id="perfHud">
+        <span>FPS: <b class="val" id="hudFps">—</b></span>
+        <span>Compute: <b class="val" id="hudCompute">—</b>ms</span>
+        <span>Bodies: <b class="val" id="hudBodies">—</b></span>
+        <span>Energy drift: <b class="val" id="hudDrift">—</b></span>
+      </div>
+
+      <div id="sidebarWrap">
+        <button type="button" id="sidebarToggle" aria-label="Close sidebar">&#9654;</button>
+        <div id="panel">
+          <!-- Mode selector -->
+          <section>
+            <h3>Mode</h3>
+            <div class="row-inline">
+              <button type="button" id="btnModeReplay" class="primary">Replay</button>
+              <button type="button" id="btnModeRealtime">Real-Time</button>
+            </div>
+          </section>
+
+          <!-- REPLAY PANEL -->
+          <div id="replayPanel">
+            <section>
+              <h3>Replay Files</h3>
+              <p class="hint">Load a pre-computed simulation replay.</p>
+              <select id="replaySelect"><option value="">— none —</option></select>
+              <div class="row-inline" style="margin-top: 4px;">
+                <button type="button" id="replayLoad">Load</button>
+                <button type="button" id="replayRefresh">Refresh</button>
+                <button type="button" id="replayDelete">Delete</button>
+              </div>
+              <p id="scaleInfo" class="hint" aria-live="polite">Scale —</p>
+            </section>
+          </div>
+
+          <!-- REAL-TIME PANEL -->
+          <div id="realtimePanel" style="display: none;">
+            <section>
+              <h3>Simulation</h3>
+              <label for="simSelect">Simulation</label>
+              <select id="simSelect"></select>
+              <label for="scenarioSelect">Scenario</label>
+              <select id="scenarioSelect"></select>
+              <div class="row-inline" style="margin-top: 6px;">
+                <button type="button" id="btnConnect" class="primary">Connect</button>
+                <button type="button" id="btnDisconnect" class="danger" style="display:none;">Disconnect</button>
+                <button type="button" id="btnReset">Reset</button>
+              </div>
+              <p id="wsStatus" class="hint">Disconnected</p>
+            </section>
+
+            <hr class="divider">
+
+            <section>
+              <h3>Bodies</h3>
+              <div id="bodyList"></div>
+            </section>
+
+            <hr class="divider">
+
+            <section>
+              <h3>Add Body</h3>
+              <label>Position (x, y, z)</label>
+              <div class="row-inline">
+                <input type="number" id="addPosX" value="3" step="0.1" style="width:30%">
+                <input type="number" id="addPosY" value="0" step="0.1" style="width:30%">
+                <input type="number" id="addPosZ" value="0" step="0.1" style="width:30%">
+              </div>
+              <label>Mass</label>
+              <input type="number" id="addMass" value="0.001" step="0.0001" min="0">
+              <label>Name</label>
+              <input type="text" id="addName" value="" placeholder="Auto-generated">
+              <div class="row-inline" style="margin-top: 4px;">
+                <button type="button" id="btnCalcVel">Calc orbit vel</button>
+                <button type="button" id="btnAddBody" class="primary">Add</button>
+              </div>
+              <p id="calcVelResult" class="hint"></p>
+            </section>
+
+            <hr class="divider">
+
+            <section>
+              <h3>Parameters</h3>
+              <label>Time step (dt)</label>
+              <input type="number" id="paramDt" value="0.002" step="0.0001" min="0">
+              <button type="button" id="btnUpdateParams" style="margin-top: 4px;">Apply</button>
+            </section>
+          </div>
+
+          <hr class="divider">
+
+          <!-- Shared view controls -->
+          <section>
+            <h3>View</h3>
+            <div class="row-inline">
+              <button type="button" id="viewReset">Reset</button>
+              <button type="button" id="viewTop">Top</button>
+              <button type="button" id="viewFront">Front</button>
+              <button type="button" id="viewSide">Side</button>
+              <button type="button" id="viewLock">Lock on</button>
+              <button type="button" id="viewGrid">Grid</button>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <div id="controls">
+      <div class="controls-left">
+        <select id="replaySelectBar" size="1" style="display:none;">
+          <option value="">— none —</option>
+        </select>
+      </div>
+      <div class="controls-center">
+        <div class="slider-row">
+          <label for="timeline">Step</label>
+          <input type="range" id="timeline" min="0" max="0" value="0">
+        </div>
+        <div class="step-info-row">
+          <span id="stepInfo">Select a mode and load a simulation</span>
+        </div>
+        <div class="play-row">
+          <button type="button" id="playBtn" aria-label="Play" title="Play">&#9654;</button>
+          <label for="speedSelect">Speed</label>
+          <select id="speedSelect">
+            <option value="0.5">0.5x</option>
+            <option value="1" selected>1x</option>
+            <option value="2">2x</option>
+            <option value="5">5x</option>
+            <option value="10">10x</option>
+            <option value="50">50x</option>
+            <option value="100">100x</option>
+            <option value="500">500x</option>
+            <option value="1000">1000x</option>
+          </select>
+        </div>
+      </div>
+      <div class="controls-right">
+        <span style="color: var(--text-muted);">Trails</span>
+        <input type="range" id="trailOpacity" min="0" max="100" value="10" title="Trail opacity">
+        <label for="trailOpacity" id="trailOpacityLabel" style="min-width: 2.5em;">10%</label>
+      </div>
+    </div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    // ======================================================================
+    // STATE
+    // ======================================================================
+    let mode = 'replay'; // 'replay' | 'realtime'
+    let scene, camera, renderer, controls;
+    let gridHelper = null;
+    let viewLockedOn = false;
+    const dummy = new THREE.Object3D();
+    const BG_COLOR = 0x0a0a12;
+
+    // Replay state
+    let replayData = null;
+    let playing = false;
+    let playAnimationId = null;
+    let playStartTime = 0;
+    let playStartIndex = 0;
+
+    // Shared rendering objects
+    let bodyMeshes = [];       // array of THREE.Mesh for real-time per-body rendering
+    let particleInstances = null; // InstancedMesh for replay mode
+    let starMesh = null;
+    let trailLineMesh = null;
+    let trailHistory = null;
+    let lastTrailFrameIndex = -1;
+
+    // Real-time state
+    let ws = null;
+    let wsConnected = false;
+    let latestState = null;
+    let rtTrailHistory = {};  // bodyIndex → [{pos, step}]
+    let rtStepCount = 0;
+    let useMsgpack = false;
+    let msgpackLib = null;
+
+    const TRAIL_SIM_SECONDS = 2.0;
+    const TRAIL_MAX_POINTS = 500;
+    const BASE_STAR_RADIUS = 0.15;
+    const MIN_PARTICLE_RADIUS = 0.02;
+
+    // ======================================================================
+    // API BASE
+    // ======================================================================
+    const pathname = window.location.pathname || '/';
+    const lastSlash = pathname.lastIndexOf('/');
+    const apiBase = lastSlash <= 0 ? '' : pathname.slice(0, lastSlash + 1);
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsBase = `${wsProtocol}//${window.location.host}`;
+
+    function replayUrl(name) {
+      return (apiBase ? apiBase.replace(/\/$/, '') : '') + '/replays/' + name + '.json';
+    }
+
+    // ======================================================================
+    // THREE.JS INIT
+    // ======================================================================
+    function init() {
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(BG_COLOR);
+      // No fog — keeps distant particles visible when zoomed out
+      const main = document.getElementById('main');
+      camera = new THREE.PerspectiveCamera(60, main.clientWidth / main.clientHeight, 0.01, 10000);
+      camera.position.set(5, 4, 5);
+      camera.lookAt(0, 0, 0);
+
+      gridHelper = new THREE.GridHelper(60, 30, 0x2a2a38, 0x1a1a24);
+      gridHelper.visible = true;
+      scene.add(gridHelper);
+
+      renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('canvas'), antialias: true });
+      renderer.setSize(main.clientWidth, main.clientHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+      controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.05;
+
+      const controlsBar = document.getElementById('controls');
+      controlsBar.addEventListener('pointerenter', () => { controls.enabled = false; });
+      controlsBar.addEventListener('pointerleave', () => { controls.enabled = true; });
+
+      window.addEventListener('resize', () => {
+        const m = document.getElementById('main');
+        camera.aspect = m.clientWidth / m.clientHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(m.clientWidth, m.clientHeight);
+      });
+    }
+
+    // ======================================================================
+    // COORDINATE MAPPING
+    // ======================================================================
+    function simToThree(p, is2D) {
+      if (is2D || p.length === 2) return [p[0], 0, p[1]];
+      return [p[0], p[2] ?? 0, p[1]];
+    }
+
+    // ======================================================================
+    // TRAIL SYSTEM (shared)
+    // ======================================================================
+    function createTrailMaterial() {
+      return new THREE.ShaderMaterial({
+        transparent: true, depthWrite: false,
+        uniforms: { uTrailOpacity: { value: 0.1 } },
+        vertexShader: `
+          attribute float alpha;
+          varying float vAlpha;
+          uniform float uTrailOpacity;
+          void main() {
+            vAlpha = alpha * uTrailOpacity;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          varying float vAlpha;
+          void main() { gl_FragColor = vec4(1.0, 1.0, 1.0, vAlpha); }
+        `,
+      });
+    }
+
+    function buildTrailGeometry(nParticles) {
+      const maxSegments = nParticles * (TRAIL_MAX_POINTS - 1);
+      const vertexCount = maxSegments * 2;
+      const positions = new Float32Array(vertexCount * 3);
+      const alphas = new Float32Array(vertexCount);
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geo.setAttribute('alpha', new THREE.BufferAttribute(alphas, 1));
+      geo.drawRange = { start: 0, count: 0 };
+      return geo;
+    }
+
+    function updateTrailMesh(history, is2D, nParticles) {
+      if (!trailLineMesh || !history) return;
+      const posAttr = trailLineMesh.geometry.getAttribute('position');
+      const alphaAttr = trailLineMesh.geometry.getAttribute('alpha');
+      let segmentCount = 0;
+      for (let i = 0; i < nParticles; i++) {
+        const trail = history[i];
+        if (!trail) continue;
+        const L = trail.length;
+        if (L < 2) continue;
+        const stepMin = trail[0].step;
+        const stepMax = trail[L - 1].step;
+        const stepSpan = Math.max(1, stepMax - stepMin);
+        for (let j = 0; j < L - 1; j++) {
+          const a = trail[j].pos;
+          const b = trail[j + 1].pos;
+          const t0 = (trail[j].step - stepMin) / stepSpan;
+          const t1 = (trail[j + 1].step - stepMin) / stepSpan;
+          const idx = segmentCount * 2;
+          posAttr.array[idx * 3] = a[0]; posAttr.array[idx * 3 + 1] = a[1]; posAttr.array[idx * 3 + 2] = a[2] ?? 0;
+          posAttr.array[(idx + 1) * 3] = b[0]; posAttr.array[(idx + 1) * 3 + 1] = b[1]; posAttr.array[(idx + 1) * 3 + 2] = b[2] ?? 0;
+          alphaAttr.array[idx] = t0;
+          alphaAttr.array[idx + 1] = t1;
+          segmentCount++;
+        }
+      }
+      posAttr.needsUpdate = true;
+      alphaAttr.needsUpdate = true;
+      trailLineMesh.geometry.setDrawRange(0, segmentCount * 2);
+    }
+
+    function ensureTrailMesh(nParticles) {
+      if (trailLineMesh) { scene.remove(trailLineMesh); trailLineMesh.geometry.dispose(); trailLineMesh.material.dispose(); }
+      trailLineMesh = new THREE.LineSegments(buildTrailGeometry(nParticles), createTrailMaterial());
+      trailLineMesh.frustumCulled = false;
+      const opEl = document.getElementById('trailOpacity');
+      if (opEl && trailLineMesh.material.uniforms) {
+        trailLineMesh.material.uniforms.uTrailOpacity.value = parseInt(opEl.value, 10) / 100;
+      }
+      scene.add(trailLineMesh);
+    }
+
+    // ======================================================================
+    // CLEAR SCENE (remove all sim objects)
+    // ======================================================================
+    function clearSimObjects() {
+      if (particleInstances) { scene.remove(particleInstances); particleInstances = null; }
+      if (starMesh) { scene.remove(starMesh); starMesh = null; }
+      bodyMeshes.forEach(m => { scene.remove(m); m.geometry.dispose(); m.material.dispose(); });
+      bodyMeshes = [];
+      if (trailLineMesh) { scene.remove(trailLineMesh); trailLineMesh.geometry.dispose(); trailLineMesh.material.dispose(); trailLineMesh = null; }
+      trailHistory = null;
+      lastTrailFrameIndex = -1;
+      rtTrailHistory = {};
+      rtStepCount = 0;
+    }
+
+    // ======================================================================
+    // REPLAY MODE
+    // ======================================================================
+    function computeParticleRadius(starMass, particleMass) {
+      if (!starMass || !particleMass || starMass <= 0 || particleMass <= 0) return 0.04;
+      const r = BASE_STAR_RADIUS * Math.pow(particleMass / starMass, 1 / 3);
+      return Math.max(MIN_PARTICLE_RADIUS, r);
+    }
+
+    let currentParticleRadius = 0.04;
+
+    function applyReplayData(data) {
+      clearSimObjects();
+      const numFrames = data.positions.length;
+      data.n_snapshots = numFrames;
+      if (!Array.isArray(data.steps) || data.steps.length !== numFrames) {
+        data.steps = Array.from({ length: numFrames }, (_, i) => i * (data.replay_every ?? 20));
+      }
+      if (data.dt == null) data.dt = 0.01;
+      replayData = data;
+
+      const is2D = data.positions[0][0].length === 2;
+      let maxParticles = 0;
+      for (let f = 0; f < numFrames; f++) {
+        const n = data.positions[f].length - 1;
+        if (n > maxParticles) maxParticles = n;
+      }
+
+      trailHistory = Array.from({ length: maxParticles }, () => []);
+      lastTrailFrameIndex = -1;
+      ensureTrailMesh(maxParticles);
+
+      const pos0 = data.positions[0];
+      const n0 = pos0.length - 1;
+      const step0 = data.steps[0] ?? 0;
+      for (let i = 0; i < n0; i++) {
+        trailHistory[i].push({ pos: simToThree(pos0[i + 1], is2D), step: step0 });
+      }
+      lastTrailFrameIndex = 0;
+
+      let starMass = 1, particleMass = 0;
+      if (data.masses) {
+        if (data.variable_n && Array.isArray(data.masses[0])) {
+          starMass = data.masses[0][0] || 1;
+          particleMass = data.masses[0].length > 1 ? data.masses[0][1] : 0;
+        } else if (Array.isArray(data.masses)) {
+          starMass = data.masses[0] || 1;
+          particleMass = data.masses.length > 1 ? data.masses[1] : 0;
+        }
+      }
+      currentParticleRadius = computeParticleRadius(starMass, particleMass);
+
+      const geo = new THREE.SphereGeometry(1, 8, 6);
+      const mat = new THREE.MeshBasicMaterial({ color: 0x5599ff });
+      particleInstances = new THREE.InstancedMesh(geo, mat, Math.max(maxParticles, 1));
+      particleInstances.count = n0;
+      particleInstances.frustumCulled = false;
+      scene.add(particleInstances);
+
+      const t0 = simToThree(pos0[0], is2D);
+      const starGeo = new THREE.SphereGeometry(BASE_STAR_RADIUS, 16, 12);
+      const starMat = new THREE.MeshBasicMaterial({ color: 0xffdd00 });
+      starMesh = new THREE.Mesh(starGeo, starMat);
+      starMesh.position.set(t0[0], t0[1], t0[2]);
+      starMesh.frustumCulled = false;
+      scene.add(starMesh);
+
+      for (let i = 0; i < n0; i++) {
+        const p = pos0[i + 1];
+        const t = simToThree(p, is2D);
+        dummy.position.set(t[0], t[1], t[2]);
+        dummy.scale.set(currentParticleRadius, currentParticleRadius, currentParticleRadius);
+        dummy.updateMatrix();
+        particleInstances.setMatrixAt(i, dummy.matrix);
+      }
+      particleInstances.instanceMatrix.needsUpdate = true;
+
+      const tl = document.getElementById('timeline');
+      tl.min = 0; tl.max = Math.max(0, numFrames - 1); tl.value = 0;
+      tl.oninput = () => setFrameIndex(parseInt(tl.value, 10));
+
+      let maxRadius = 0;
+      for (const p of pos0) {
+        const r = Math.sqrt(p[0]*p[0] + p[1]*p[1] + (p[2] !== undefined ? p[2]*p[2] : 0));
+        if (r > maxRadius) maxRadius = r;
+      }
+      const ratioStr = particleMass > 0 ? '  |  Mass ratio: ' + Math.round(starMass / particleMass) + ':1' : '';
+      document.getElementById('scaleInfo').textContent = 'Extent: ~' + maxRadius.toFixed(1) + ' units' + ratioStr;
+
+      const nParts = data.variable_n ? n0 : (data.n_particles || n0);
+      document.getElementById('stepInfo').textContent =
+        `Step ${data.steps[0] ?? 0}  (${numFrames} snapshots, ${nParts} particles)  dt=${data.dt}`;
+    }
+
+    function setFrameIndex(idx) {
+      if (!replayData) return;
+      idx = Math.max(0, Math.min(idx, replayData.n_snapshots - 1));
+      document.getElementById('timeline').value = idx;
+      updateReplayFrame(idx);
+      document.getElementById('stepInfo').textContent =
+        `Step ${replayData.steps[idx]} / ${replayData.steps[replayData.steps.length - 1]}  (snapshot ${idx + 1}/${replayData.n_snapshots})  dt=${replayData.dt}`;
+    }
+
+    function updateReplayFrame(frameIndex) {
+      if (!replayData) return;
+      const pos = replayData.positions[frameIndex];
+      const is2D = pos[0].length === 2;
+      const n = pos.length - 1;
+      const stepsArr = replayData.steps;
+      const currentStep = stepsArr ? stepsArr[frameIndex] : frameIndex * 100;
+      const dt = replayData.dt || 0.01;
+      const trailSimSteps = Math.min(TRAIL_MAX_POINTS, Math.max(20, Math.round(TRAIL_SIM_SECONDS / dt)));
+
+      if (trailHistory && n > 0 && n <= trailHistory.length) {
+        const isRewinding = lastTrailFrameIndex !== undefined && frameIndex < lastTrailFrameIndex;
+        if (isRewinding) {
+          for (let i = 0; i < n; i++) trailHistory[i] = trailHistory[i].filter(e => e.step <= currentStep);
+        }
+        const startF = lastTrailFrameIndex === undefined ? frameIndex : Math.min(lastTrailFrameIndex + 1, frameIndex);
+        for (let f = startF; f <= frameIndex; f++) {
+          const step = stepsArr ? stepsArr[f] : f * 100;
+          const pf = replayData.positions[f];
+          const nf = pf.length - 1;
+          for (let i = 0; i < Math.min(n, nf); i++) {
+            trailHistory[i].push({ pos: simToThree(pf[i + 1], pf[0].length === 2), step });
+          }
+        }
+        for (let i = 0; i < n; i++) {
+          while (trailHistory[i].length > 0 && trailHistory[i][0].step < currentStep - trailSimSteps) trailHistory[i].shift();
+          while (trailHistory[i].length > TRAIL_MAX_POINTS) trailHistory[i].shift();
+        }
+        lastTrailFrameIndex = frameIndex;
+        updateTrailMesh(trailHistory, is2D, n);
+      }
+
+      if (particleInstances) {
+        particleInstances.count = n;
+        const r = currentParticleRadius;
+        for (let i = 0; i < n; i++) {
+          const t = simToThree(pos[i + 1], is2D);
+          dummy.position.set(t[0], t[1], t[2]);
+          dummy.scale.set(r, r, r);
+          dummy.updateMatrix();
+          particleInstances.setMatrixAt(i, dummy.matrix);
+        }
+        particleInstances.instanceMatrix.needsUpdate = true;
+      }
+      if (starMesh) {
+        const tStar = simToThree(pos[0], is2D);
+        starMesh.position.set(tStar[0], tStar[1], tStar[2]);
+        if (viewLockedOn) {
+          const offset = camera.position.clone().sub(controls.target);
+          controls.target.copy(starMesh.position);
+          camera.position.copy(starMesh.position).add(offset);
+        }
+      }
+    }
+
+    function loadReplay(url) {
+      document.getElementById('stepInfo').textContent = 'Loading…';
+      fetch(url)
+        .then(r => { if (!r.ok) throw new Error(r.status + ' ' + r.statusText); return r.json(); })
+        .then(data => {
+          if (!data || !Array.isArray(data.positions) || data.positions.length === 0) throw new Error('Invalid replay format');
+          applyReplayData(data);
+        })
+        .catch(err => { document.getElementById('stepInfo').textContent = 'Load failed: ' + (err.message || String(err)); });
+    }
+
+    function fetchReplays() {
+      const url = (apiBase ? apiBase.replace(/\/$/, '') : '') + '/api/replays';
+      return fetch(url).then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+        .then(list => {
+          const sel = document.getElementById('replaySelect');
+          sel.innerHTML = '<option value="">— none —</option>';
+          (list || []).forEach(r => {
+            const opt = document.createElement('option');
+            opt.value = r.name;
+            opt.textContent = r.name + (r.size_kb != null ? ' (' + (r.size_kb / 1024).toFixed(1) + ' MB)' : '');
+            sel.appendChild(opt);
+          });
+          return list;
+        });
+    }
+
+    // ======================================================================
+    // REAL-TIME MODE
+    // ======================================================================
+    function hslToHex(h, s, l) {
+      s /= 100; l /= 100;
+      const a = s * Math.min(l, 1 - l);
+      const f = n => { const k = (n + h / 30) % 12; return l - a * Math.max(Math.min(k - 3, 9 - k, 1), -1); };
+      return (Math.round(f(0) * 255) << 16) | (Math.round(f(8) * 255) << 8) | Math.round(f(4) * 255);
+    }
+
+    function applyRealtimeState(state) {
+      if (!state || !state.bodies) return;
+      const bodies = state.bodies;
+      const positions = bodies.positions;
+      const n = positions.length;
+      const is2D = n > 0 && positions[0].length === 2;
+
+      // Ensure we have enough meshes
+      while (bodyMeshes.length < n) {
+        const geo = new THREE.SphereGeometry(1, 12, 8);
+        const mat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.frustumCulled = false;
+        scene.add(mesh);
+        bodyMeshes.push(mesh);
+      }
+      while (bodyMeshes.length > n) {
+        const m = bodyMeshes.pop();
+        scene.remove(m); m.geometry.dispose(); m.material.dispose();
+      }
+
+      for (let i = 0; i < n; i++) {
+        const mesh = bodyMeshes[i];
+        const p = simToThree(positions[i], is2D);
+        const r = bodies.radii ? (bodies.radii[i] || 0.05) : 0.05;
+        mesh.position.set(p[0], p[1], p[2]);
+        mesh.scale.set(r, r, r);
+        if (bodies.colors && bodies.colors[i]) {
+          const c = bodies.colors[i];
+          mesh.material.color.set(hslToHex(c[0], c[1], c[2]));
+        }
+      }
+
+      // Trail history for real-time
+      rtStepCount++;
+      for (let i = 0; i < n; i++) {
+        if (!rtTrailHistory[i]) rtTrailHistory[i] = [];
+        const p = simToThree(positions[i], is2D);
+        rtTrailHistory[i].push({ pos: p, step: rtStepCount });
+        while (rtTrailHistory[i].length > TRAIL_MAX_POINTS) rtTrailHistory[i].shift();
+      }
+
+      // Rebuild trail mesh if body count changed
+      if (!trailLineMesh || trailLineMesh._nBodies !== n) {
+        ensureTrailMesh(n);
+        trailLineMesh._nBodies = n;
+      }
+      const trailArr = [];
+      for (let i = 0; i < n; i++) trailArr.push(rtTrailHistory[i] || []);
+      updateTrailMesh(trailArr, is2D, n);
+
+      // Lock on first body
+      if (viewLockedOn && bodyMeshes.length > 0) {
+        const offset = camera.position.clone().sub(controls.target);
+        controls.target.copy(bodyMeshes[0].position);
+        camera.position.copy(bodyMeshes[0].position).add(offset);
+      }
+
+      // Body list
+      const listEl = document.getElementById('bodyList');
+      if (listEl && bodies.names) {
+        let html = '';
+        for (let i = 0; i < n; i++) {
+          const c = bodies.colors && bodies.colors[i] ? bodies.colors[i] : [0,0,70];
+          const color = `hsl(${c[0]},${c[1]}%,${c[2]}%)`;
+          const name = bodies.names[i] || `Body ${i}`;
+          const mass = bodies.masses ? bodies.masses[i] : '?';
+          const massStr = typeof mass === 'number' ? (mass < 0.01 ? mass.toExponential(2) : mass.toPrecision(4)) : mass;
+          html += `<div class="body-item"><span class="body-dot" style="background:${color}"></span><span class="body-name">${name}</span><span class="body-mass">${massStr}</span></div>`;
+        }
+        listEl.innerHTML = html;
+      }
+
+      // Performance HUD
+      const perf = state.performance;
+      if (perf) {
+        document.getElementById('perfHud').style.display = '';
+        document.getElementById('hudFps').textContent = perf.avg_fps ?? '—';
+        document.getElementById('hudCompute').textContent = perf.compute_time_ms != null ? perf.compute_time_ms.toFixed(1) : '—';
+        document.getElementById('hudBodies').textContent = perf.body_count ?? n;
+        document.getElementById('hudDrift').textContent = perf.energy_drift_pct != null ? perf.energy_drift_pct.toFixed(4) + '%' : '—';
+      }
+
+      // Step info
+      document.getElementById('stepInfo').textContent = `Real-time — ${n} bodies  |  dt=${state.params?.dt ?? '?'}`;
+    }
+
+    async function connectWs() {
+      const simId = document.getElementById('simSelect').value;
+      const scenarioId = document.getElementById('scenarioSelect').value;
+      if (!simId) return;
+
+      disconnectWs();
+      clearSimObjects();
+      rtTrailHistory = {};
+      rtStepCount = 0;
+
+      const statusEl = document.getElementById('wsStatus');
+      statusEl.textContent = 'Connecting…';
+
+      let wsUrl = `${wsBase}/ws?sim_id=${encodeURIComponent(simId)}`;
+      if (scenarioId) wsUrl += `&scenario=${encodeURIComponent(scenarioId)}`;
+
+      ws = new WebSocket(wsUrl);
+      ws.binaryType = 'arraybuffer';
+
+      ws.onopen = () => {
+        wsConnected = true;
+        statusEl.textContent = 'Connected';
+        statusEl.style.color = 'var(--success)';
+        document.getElementById('btnConnect').style.display = 'none';
+        document.getElementById('btnDisconnect').style.display = '';
+      };
+
+      ws.onclose = () => {
+        wsConnected = false;
+        statusEl.textContent = 'Disconnected';
+        statusEl.style.color = '';
+        document.getElementById('btnConnect').style.display = '';
+        document.getElementById('btnDisconnect').style.display = 'none';
+      };
+
+      ws.onerror = () => {
+        statusEl.textContent = 'Connection error';
+        statusEl.style.color = 'var(--danger)';
+      };
+
+      ws.onmessage = (event) => {
+        let state;
+        try {
+          if (event.data instanceof ArrayBuffer) {
+            if (useMsgpack && msgpackLib) {
+              state = msgpackLib.decode(new Uint8Array(event.data));
+            } else {
+              const text = new TextDecoder().decode(event.data);
+              state = JSON.parse(text);
+            }
+          } else {
+            state = JSON.parse(event.data);
+          }
+        } catch (e) {
+          return;
+        }
+
+        if (state.type === 'ping') {
+          sendWsMessage({ type: 'pong' });
+          return;
+        }
+        if (state.type === 'velocity_computed') {
+          const data = state.data;
+          const el = document.getElementById('calcVelResult');
+          if (el && data && data.velocity) {
+            const v = data.velocity;
+            el.textContent = `Orbit velocity: [${v.map(x => x.toFixed(4)).join(', ')}]`;
+          }
+          return;
+        }
+        if (state.type === 'init') {
+          rtTrailHistory = {};
+          rtStepCount = 0;
+        }
+
+        latestState = state;
+        applyRealtimeState(state);
+      };
+    }
+
+    function disconnectWs() {
+      if (ws) {
+        try { ws.close(); } catch (_) {}
+        ws = null;
+      }
+      wsConnected = false;
+      document.getElementById('wsStatus').textContent = 'Disconnected';
+      document.getElementById('wsStatus').style.color = '';
+      document.getElementById('btnConnect').style.display = '';
+      document.getElementById('btnDisconnect').style.display = 'none';
+      document.getElementById('perfHud').style.display = 'none';
+    }
+
+    function sendWsMessage(msg) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      ws.send(JSON.stringify(msg));
+    }
+
+    // ======================================================================
+    // SIMULATION PICKER
+    // ======================================================================
+    async function loadSimulations() {
+      try {
+        const resp = await fetch((apiBase ? apiBase.replace(/\/$/, '') : '') + '/api/simulations');
+        const data = await resp.json();
+        const sims = data.simulations || [];
+        const sel = document.getElementById('simSelect');
+        sel.innerHTML = '';
+        sims.forEach(s => {
+          const opt = document.createElement('option');
+          opt.value = s.id;
+          opt.textContent = `${s.icon || ''} ${s.name}`;
+          opt.dataset.scenarios = JSON.stringify(s.scenarios || []);
+          sel.appendChild(opt);
+        });
+        updateScenarioSelect();
+      } catch (_) {}
+    }
+
+    function updateScenarioSelect() {
+      const simSel = document.getElementById('simSelect');
+      const opt = simSel.selectedOptions[0];
+      const scenSel = document.getElementById('scenarioSelect');
+      scenSel.innerHTML = '';
+      if (!opt) return;
+      const scenarios = JSON.parse(opt.dataset.scenarios || '[]');
+      scenarios.forEach(s => {
+        const o = document.createElement('option');
+        o.value = s;
+        o.textContent = s;
+        scenSel.appendChild(o);
+      });
+    }
+
+    // ======================================================================
+    // MODE SWITCHING
+    // ======================================================================
+    function setMode(newMode) {
+      mode = newMode;
+      const indicator = document.getElementById('modeIndicator');
+      const replayPanel = document.getElementById('replayPanel');
+      const realtimePanel = document.getElementById('realtimePanel');
+      const btnReplay = document.getElementById('btnModeReplay');
+      const btnRealtime = document.getElementById('btnModeRealtime');
+      const timelineRow = document.querySelector('.slider-row');
+      const playRow = document.querySelector('.play-row');
+      const speedSel = document.getElementById('speedSelect');
+
+      if (mode === 'replay') {
+        indicator.className = 'replay';
+        indicator.textContent = 'Replay';
+        replayPanel.style.display = '';
+        realtimePanel.style.display = 'none';
+        btnReplay.classList.add('primary');
+        btnRealtime.classList.remove('primary');
+        timelineRow.style.display = '';
+        playRow.style.display = '';
+        document.getElementById('perfHud').style.display = 'none';
+        disconnectWs();
+      } else {
+        indicator.className = 'realtime';
+        indicator.textContent = 'Real-Time';
+        replayPanel.style.display = 'none';
+        realtimePanel.style.display = '';
+        btnRealtime.classList.add('primary');
+        btnReplay.classList.remove('primary');
+        timelineRow.style.display = 'none';
+        playRow.style.display = 'none';
+        if (playing) { playing = false; if (playAnimationId) cancelAnimationFrame(playAnimationId); }
+        replayData = null;
+        clearSimObjects();
+      }
+    }
+
+    // ======================================================================
+    // VIEW CONTROLS
+    // ======================================================================
+    function setupViewControls() {
+      const defaultPosition = new THREE.Vector3(5, 4, 5);
+      const defaultTarget = new THREE.Vector3(0, 0, 0);
+      const setLock = () => { document.getElementById('viewLock').textContent = viewLockedOn ? 'Unlock' : 'Lock on'; };
+
+      document.getElementById('viewReset').onclick = () => { viewLockedOn = false; setLock(); camera.position.copy(defaultPosition); controls.target.copy(defaultTarget); };
+      document.getElementById('viewTop').onclick = () => { viewLockedOn = false; setLock(); camera.position.set(0, 12, 0); controls.target.set(0, 0, 0); };
+      document.getElementById('viewFront').onclick = () => { viewLockedOn = false; setLock(); camera.position.set(0, 4, 10); controls.target.set(0, 0, 0); };
+      document.getElementById('viewSide').onclick = () => { viewLockedOn = false; setLock(); camera.position.set(10, 4, 0); controls.target.set(0, 0, 0); };
+      document.getElementById('viewLock').onclick = () => {
+        viewLockedOn = !viewLockedOn; setLock();
+        if (viewLockedOn) {
+          const target = starMesh ? starMesh.position : (bodyMeshes[0] ? bodyMeshes[0].position : new THREE.Vector3());
+          const offset = camera.position.clone().sub(controls.target);
+          controls.target.copy(target);
+          camera.position.copy(target).add(offset);
+        }
+      };
+      document.getElementById('viewGrid').onclick = () => { if (gridHelper) gridHelper.visible = !gridHelper.visible; };
+    }
+
+    // ======================================================================
+    // PLAYBACK CONTROLS (replay mode)
+    // ======================================================================
+    function setupPlaybackControls() {
+      const playBtn = document.getElementById('playBtn');
+      const speedSelect = document.getElementById('speedSelect');
+      const tl = document.getElementById('timeline');
+
+      playBtn.onclick = () => {
+        if (mode !== 'replay' || !replayData) return;
+        playing = !playing;
+        playBtn.innerHTML = playing ? '&#9208;' : '&#9654;';
+        playBtn.title = playing ? 'Pause' : 'Play';
+        if (playing) {
+          playStartTime = performance.now();
+          playStartIndex = parseInt(tl.value, 10);
+          function tick(now) {
+            if (!playing) return;
+            playAnimationId = requestAnimationFrame(tick);
+            const speed = parseFloat(speedSelect.value);
+            const n = replayData.n_snapshots;
+            if (n <= 1) return;
+            const elapsed = (now - playStartTime) / 1000;
+            let idx = Math.floor(playStartIndex + elapsed * speed) % n;
+            if (idx < 0) idx += n;
+            setFrameIndex(idx);
+          }
+          playAnimationId = requestAnimationFrame(tick);
+        } else {
+          if (playAnimationId != null) cancelAnimationFrame(playAnimationId);
+          playStartIndex = parseInt(tl.value, 10);
+        }
+      };
+    }
+
+    // ======================================================================
+    // SIDEBAR TOGGLE
+    // ======================================================================
+    function setupSidebar() {
+      const wrap = document.getElementById('sidebarWrap');
+      const btn = document.getElementById('sidebarToggle');
+      btn.onclick = () => {
+        wrap.classList.toggle('closed');
+        btn.textContent = wrap.classList.contains('closed') ? '\u25C0' : '\u25B6';
+        window.dispatchEvent(new Event('resize'));
+      };
+      if (window.matchMedia('(max-width: 768px)').matches) {
+        wrap.classList.add('closed');
+        btn.textContent = '\u25C0';
+      }
+    }
+
+    // ======================================================================
+    // ANIMATION LOOP
+    // ======================================================================
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    // ======================================================================
+    // INIT
+    // ======================================================================
+    init();
+    setupViewControls();
+    setupPlaybackControls();
+    setupSidebar();
+
+    // Trail opacity
+    document.getElementById('trailOpacity').oninput = function() {
+      const v = parseInt(this.value, 10);
+      document.getElementById('trailOpacityLabel').textContent = v + '%';
+      if (trailLineMesh && trailLineMesh.material.uniforms) {
+        trailLineMesh.material.uniforms.uTrailOpacity.value = v / 100;
+      }
+    };
+
+    // Mode buttons
+    document.getElementById('btnModeReplay').onclick = () => setMode('replay');
+    document.getElementById('btnModeRealtime').onclick = () => setMode('realtime');
+
+    // Replay controls
+    document.getElementById('replayLoad').onclick = () => {
+      const name = document.getElementById('replaySelect').value;
+      if (name) loadReplay(replayUrl(name));
+    };
+    document.getElementById('replaySelect').onchange = () => {
+      const name = document.getElementById('replaySelect').value;
+      if (name) loadReplay(replayUrl(name));
+    };
+    document.getElementById('replayRefresh').onclick = () => {
+      fetchReplays().catch(() => { document.getElementById('stepInfo').textContent = 'Replay list unavailable'; });
+    };
+    document.getElementById('replayDelete').onclick = () => {
+      const name = document.getElementById('replaySelect').value;
+      if (!name || !confirm('Delete replay "' + name + '"?')) return;
+      fetch((apiBase ? apiBase.replace(/\/$/, '') : '') + '/api/replays/' + encodeURIComponent(name), { method: 'DELETE' })
+        .then(r => r.json()).then(b => { if (b.ok) fetchReplays(); }).catch(() => {});
+    };
+
+    // Real-time controls
+    document.getElementById('simSelect').onchange = updateScenarioSelect;
+    document.getElementById('btnConnect').onclick = connectWs;
+    document.getElementById('btnDisconnect').onclick = disconnectWs;
+    document.getElementById('btnReset').onclick = () => sendWsMessage({ type: 'reset', data: {} });
+    document.getElementById('btnUpdateParams').onclick = () => {
+      const dt = parseFloat(document.getElementById('paramDt').value);
+      if (!isNaN(dt)) sendWsMessage({ type: 'update_params', data: { dt } });
+    };
+    document.getElementById('btnAddBody').onclick = () => {
+      const pos = [
+        parseFloat(document.getElementById('addPosX').value) || 0,
+        parseFloat(document.getElementById('addPosY').value) || 0,
+        parseFloat(document.getElementById('addPosZ').value) || 0,
+      ];
+      const mass = parseFloat(document.getElementById('addMass').value) || 0.001;
+      const name = document.getElementById('addName').value || undefined;
+      sendWsMessage({ type: 'add_body', data: { pos, vel: [0, 0, 0], mass, name, radius: 0.05, color: [180, 60, 70] } });
+    };
+    document.getElementById('btnCalcVel').onclick = () => {
+      const pos = [
+        parseFloat(document.getElementById('addPosX').value) || 0,
+        parseFloat(document.getElementById('addPosY').value) || 0,
+        parseFloat(document.getElementById('addPosZ').value) || 0,
+      ];
+      const mass = parseFloat(document.getElementById('addMass').value) || 0.001;
+      sendWsMessage({ type: 'compute_velocity', data: { position: pos, mass, requestId: 'ui' } });
+    };
+
+    // Try to load msgpack from CDN
+    try {
+      const mod = await import('https://esm.sh/@msgpack/msgpack@3.0.0-beta2');
+      msgpackLib = mod;
+      useMsgpack = true;
+    } catch (_) {}
+
+    // Hash-based deep linking from dashboard
+    function parseHash() {
+      const hash = window.location.hash.replace(/^#/, '');
+      const params = {};
+      hash.split('&').forEach(part => {
+        const [k, v] = part.split('=');
+        if (k) params[k] = decodeURIComponent(v || '');
+      });
+      return params;
+    }
+
+    async function boot() {
+      await loadSimulations();
+      const hashParams = parseHash();
+
+      if (hashParams.realtime !== undefined || hashParams.sim) {
+        setMode('realtime');
+        if (hashParams.sim) {
+          const simSel = document.getElementById('simSelect');
+          simSel.value = hashParams.sim;
+          updateScenarioSelect();
+          if (hashParams.scenario) {
+            document.getElementById('scenarioSelect').value = hashParams.scenario;
+          }
+          setTimeout(() => connectWs(), 300);
+        }
+      } else {
+        fetchReplays()
+          .then(list => {
+            if (hashParams.replay !== undefined && hashParams.name) {
+              loadReplay(replayUrl(hashParams.name));
+            } else if (list && list.length > 0) {
+              loadReplay(replayUrl(list[0].name));
+            } else {
+              document.getElementById('stepInfo').textContent = 'No replays — switch to Real-Time mode or add replay files';
+            }
+          })
+          .catch(() => {
+            document.getElementById('stepInfo').textContent = 'Connect to a simulation or add replay files to get started';
+          });
+      }
+    }
+
+    boot();
+    animate();
+  </script>
+</body>
+</html>

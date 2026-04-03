@@ -1,0 +1,29 @@
+# ASTR 311 Unified — group gravity sim platform (dashboard, replays, real-time WebSocket).
+# Homelab: homelab-web network, port 8124.
+# Route: astr311.chrislawrence.ca
+networks:
+  web:
+    external: true
+    name: homelab-web
+
+services:
+  astr311-unified:
+    build: .
+    container_name: astr311-unified
+    restart: unless-stopped
+    networks:
+      - web
+    ports:
+      - "8124:8000"
+    environment:
+      - PORT=8000
+      - PYTHONUNBUFFERED=1
+    volumes:
+      # Optional: bind mount replays so host and container share (e.g. for generated replays)
+      - ./frontend/replays:/app/frontend/replays
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
