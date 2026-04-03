@@ -1,0 +1,26 @@
+# To install all project dependencies with uv, run:
+#   uv pip install -r requirements.txt
+
+# Or, if you want to install the project itself in editable mode:
+#   uv pip install -e .
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cosmic-origins"
+version = "0.1.0"
+description = "Educational astronomy simulations: early-universe gravity and collider concepts."
+requires-python = ">=3.10"
+dependencies = [
+  "numpy",
+  "matplotlib",
+  "cupy-cuda12x",
+]
+
+[project.optional-dependencies]
+gpu = ["cupy-cuda12x"]
+
+# No console scripts or complex packaging yet; we'll keep usage simple.
+
