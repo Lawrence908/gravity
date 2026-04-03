@@ -200,10 +200,10 @@ Binary snapshots use `.npz` format (numpy compressed). See `chris/docs/REPLAY_FO
 |--------|------|-------------|
 | GET | `/` | Serve frontend dashboard |
 | GET | `/health` | Health check |
-| GET | `/simulations` | List available simulators |
-| GET | `/replays` | List pre-computed replays |
-| GET | `/replays/{name}` | Download a replay JSON |
-| WebSocket | `/ws/{simulator}` | Real-time simulation streaming |
+| GET | `/api/simulations` | List available simulators |
+| GET | `/api/replays` | List pre-computed replays |
+| GET | `/api/replays/{name}` | Download a replay JSON |
+| WebSocket | `/ws?sim_id={sim_id}&scenario={scenario}` | Real-time simulation streaming |
 
 ## Docker Configuration
 
