@@ -222,7 +222,7 @@ Binary snapshots use `.npz` format (numpy compressed). See `chris/docs/REPLAY_FO
 | unified | `python:3.12-slim` | 8124 | No |
 
 Environment variables used in containers:
-- `PYTHONPATH`: `/app/src` (chris), `/app` (unified)
+- `PYTHONPATH`: `/app/src` (chris only)
 - `PORT`: `8000`
 - `PYTHONUNBUFFERED`: `1`
 
