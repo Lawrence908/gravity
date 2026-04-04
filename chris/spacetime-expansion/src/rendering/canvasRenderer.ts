@@ -80,19 +80,28 @@ export function drawComovingGrid(
   ctx.strokeStyle = 'rgba(26, 32, 64, 0.6)';
   ctx.lineWidth = 0.5;
 
-  // Determine grid range in comoving coords visible on screen
+  // Determine grid range in comoving coords visible on screen.
+  // When a is very small, the comoving extent is huge — dynamically
+  // increase grid spacing to cap the number of lines drawn.
+  const MAX_LINES = 60;
   const halfW = w / (2 * view.scale * a);
   const halfH = h / (2 * view.scale * a);
 
-  const minX = Math.floor((view.centerX - halfW) / gridSpacing) * gridSpacing;
-  const maxX = Math.ceil((view.centerX + halfW) / gridSpacing) * gridSpacing;
-  const minY = Math.floor((view.centerY - halfH) / gridSpacing) * gridSpacing;
-  const maxY = Math.ceil((view.centerY + halfH) / gridSpacing) * gridSpacing;
+  let spacing = gridSpacing;
+  const estLines = ((2 * halfW) / spacing + (2 * halfH) / spacing);
+  if (estLines > MAX_LINES) {
+    spacing = spacing * Math.ceil(estLines / MAX_LINES);
+  }
+
+  const minX = Math.floor((view.centerX - halfW) / spacing) * spacing;
+  const maxX = Math.ceil((view.centerX + halfW) / spacing) * spacing;
+  const minY = Math.floor((view.centerY - halfH) / spacing) * spacing;
+  const maxY = Math.ceil((view.centerY + halfH) / spacing) * spacing;
 
   ctx.beginPath();
 
   // Vertical lines
-  for (let x = minX; x <= maxX; x += gridSpacing) {
+  for (let x = minX; x <= maxX; x += spacing) {
     const [sx, sy1] = toScreen(x, minY, a, view, w, h);
     const [, sy2] = toScreen(x, maxY, a, view, w, h);
     ctx.moveTo(sx, sy1);
@@ -100,7 +109,7 @@ export function drawComovingGrid(
   }
 
   // Horizontal lines
-  for (let y = minY; y <= maxY; y += gridSpacing) {
+  for (let y = minY; y <= maxY; y += spacing) {
     const [sx1, sy] = toScreen(minX, y, a, view, w, h);
     const [sx2] = toScreen(maxX, y, a, view, w, h);
     ctx.moveTo(sx1, sy);
@@ -280,7 +289,19 @@ export function drawHUD(
   const panelW = 260;
   const panelH = 130;
   ctx.beginPath();
-  ctx.roundRect(x - 8, y - 8, panelW, panelH, 6);
+  if (ctx.roundRect) {
+    ctx.roundRect(x - 8, y - 8, panelW, panelH, 6);
+  } else {
+    // Fallback for browsers without roundRect support
+    const r = 6;
+    const px = x - 8, py = y - 8;
+    ctx.moveTo(px + r, py);
+    ctx.arcTo(px + panelW, py, px + panelW, py + panelH, r);
+    ctx.arcTo(px + panelW, py + panelH, px, py + panelH, r);
+    ctx.arcTo(px, py + panelH, px, py, r);
+    ctx.arcTo(px, py, px + panelW, py, r);
+    ctx.closePath();
+  }
   ctx.fill();
 
   // Epoch label with color indicator
