@@ -119,7 +119,9 @@ export default function SimulationCanvas({
       canvas.height = rect.height * dpr;
       const ctx = canvas.getContext('2d');
       if (ctx) {
-        ctx.scale(dpr, dpr);
+        // Reset transform before applying DPR scale to prevent
+        // cumulative scaling on repeated resizes
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         ctxRef.current = ctx;
       }
     };
