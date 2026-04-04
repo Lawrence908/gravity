@@ -164,7 +164,7 @@ NumPy-style docstrings with section headers such as `Parameters`, `Returns`, and
 
 Key conservation law tolerances from tests:
 - Energy drift: < 1% over simulation duration
-- Angular momentum: conserved to machine precision (leapfrog)
+- Angular momentum: 3D tests currently assert relative drift < 5%; 2D checks are diagnostic/advisory rather than strict test failures
 
 ## Configuration
 
