@@ -1,0 +1,4 @@
+# Base API deps + CuPy for CUDA 12.x wheels (matches most current drivers).
+# If `nvidia-smi` shows CUDA Version 11.x only, swap for: cupy-cuda11x
+-r requirements.txt
+cupy-cuda12x

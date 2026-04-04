@@ -10,6 +10,8 @@ services:
   astr311-unified:
     build: .
     container_name: astr311-unified
+    # Pass NVIDIA GPU(s) into the container (requires nvidia-container-toolkit on host).
+    gpus: all
     restart: unless-stopped
     networks:
       - web
