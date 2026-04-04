@@ -58,6 +58,7 @@ export default function SimulationCanvas({
   resetSignal,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const ctxRef = useRef<CanvasRenderingContext2D | null>(null);
   const rafRef = useRef<number>(0);
 
   // Simulation state (mutable refs to avoid re-renders)
@@ -117,7 +118,10 @@ export default function SimulationCanvas({
       canvas.width = rect.width * dpr;
       canvas.height = rect.height * dpr;
       const ctx = canvas.getContext('2d');
-      if (ctx) ctx.scale(dpr, dpr);
+      if (ctx) {
+        ctx.scale(dpr, dpr);
+        ctxRef.current = ctx;
+      }
     };
 
     resize();
@@ -139,7 +143,7 @@ export default function SimulationCanvas({
       const dt = lastTime === 0 ? 16 : Math.min(timestamp - lastTime, 50);
       lastTime = timestamp;
 
-      const ctx = canvas.getContext('2d');
+      const ctx = ctxRef.current;
       if (!ctx) return;
 
       const dpr = window.devicePixelRatio || 1;
@@ -245,6 +249,8 @@ export default function SimulationCanvas({
       x: viewRef.current.centerX,
       y: viewRef.current.centerY,
     };
+    const canvas = canvasRef.current;
+    if (canvas) canvas.style.cursor = 'grabbing';
   }, []);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
@@ -263,11 +269,12 @@ export default function SimulationCanvas({
         Math.abs(e.clientX - dragStart.current.x) > 3 ||
         Math.abs(e.clientY - dragStart.current.y) > 3;
       isDragging.current = false;
+      const canvas = canvasRef.current;
+      if (canvas) canvas.style.cursor = 'grab';
 
       if (wasDrag) return;
 
       // Click: find nearest galaxy and recenter on it
-      const canvas = canvasRef.current;
       if (!canvas) return;
       const rect = canvas.getBoundingClientRect();
       const clickX = e.clientX - rect.left;
@@ -295,9 +302,17 @@ export default function SimulationCanvas({
 
       if (bestId !== null) {
         const g = galaxiesRef.current[bestId];
-        // Recenter on this galaxy's comoving position
-        viewRef.current.centerX = g.comovingX;
-        viewRef.current.centerY = g.comovingY;
+        // Recenter using a comoving position consistent with the galaxy's
+        // current rendered physical position. For clustered/bound galaxies,
+        // physical position may not equal comoving * a.
+        const a = universeRef.current.scaleFactor;
+        if (a > 0) {
+          viewRef.current.centerX = g.physicalX / a;
+          viewRef.current.centerY = g.physicalY / a;
+        } else {
+          viewRef.current.centerX = g.comovingX;
+          viewRef.current.centerY = g.comovingY;
+        }
         selectedGalaxyRef.current = bestId;
       }
     },
@@ -324,7 +339,7 @@ export default function SimulationCanvas({
         width: '100%',
         height: '100%',
         display: 'block',
-        cursor: isDragging.current ? 'grabbing' : 'grab',
+        cursor: 'grab',
       }}
     />
   );

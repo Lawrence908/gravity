@@ -8,7 +8,6 @@
 import { useState, useCallback } from 'react';
 import SimulationCanvas from './components/SimulationCanvas';
 import type { SimulationOptions } from './components/SimulationCanvas';
-import type { UniverseState } from './physics/universe';
 import Controls from './components/Controls';
 
 export default function App() {
@@ -21,9 +20,6 @@ export default function App() {
   });
 
   const [resetSignal, setResetSignal] = useState(0);
-  const [_universeState, setUniverseState] = useState<UniverseState | null>(
-    null
-  );
 
   const handleOptionsChange = useCallback(
     (partial: Partial<SimulationOptions>) => {
@@ -36,8 +32,9 @@ export default function App() {
     setResetSignal((s) => s + 1);
   }, []);
 
-  const handleStateUpdate = useCallback((state: UniverseState) => {
-    setUniverseState(state);
+  const handleStateUpdate = useCallback(() => {
+    // HUD is drawn directly on canvas; this callback exists for future
+    // React-rendered overlays that may need universe state.
   }, []);
 
   return (

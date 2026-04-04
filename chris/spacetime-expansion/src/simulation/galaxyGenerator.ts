@@ -62,7 +62,7 @@ export function generateGalaxies(
       clusterId: null,
       clusterOffsetX: 0,
       clusterOffsetY: 0,
-      baseColor: [...color],
+      baseColor: color,
     };
 
     // Check if this galaxy falls within a cluster's binding radius
@@ -103,13 +103,20 @@ export function generateGalaxies(
 
     for (let j = 0; j < Math.min(needed, unbound.length); j++) {
       const g = unbound[j].g;
+      const dx = g.comovingX - cluster.centerX;
+      const dy = g.comovingY - cluster.centerY;
+
       g.clusterId = cluster.id;
-      g.clusterOffsetX = (g.comovingX - cluster.centerX) * A_INITIAL;
-      g.clusterOffsetY = (g.comovingY - cluster.centerY) * A_INITIAL;
       // Move the galaxy's comoving position near the cluster center
       // so it visually starts inside the cluster
-      g.comovingX = cluster.centerX + g.clusterOffsetX / A_INITIAL * 0.3;
-      g.comovingY = cluster.centerY + g.clusterOffsetY / A_INITIAL * 0.3;
+      g.comovingX = cluster.centerX + dx * 0.3;
+      g.comovingY = cluster.centerY + dy * 0.3;
+      // Physical-space offset from cluster center at initialization.
+      // This offset stays constant (gravitational binding).
+      g.clusterOffsetX = (g.comovingX - cluster.centerX) * A_INITIAL;
+      g.clusterOffsetY = (g.comovingY - cluster.centerY) * A_INITIAL;
+      g.physicalX = g.comovingX * A_INITIAL;
+      g.physicalY = g.comovingY * A_INITIAL;
       cluster.galaxyIds.push(g.id);
     }
   }

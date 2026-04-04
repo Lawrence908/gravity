@@ -111,7 +111,7 @@ export function computeDeceleration(a: number): number {
   if (H < 1e-15) return 0;
 
   // From the acceleration equation:
-  // q = (Ω_r/(2a⁴) + Ω_m/(2a³) - Ω_Λ) × H0² / H²
+  // q = (Ω_r/a⁴ + Ω_m/(2a³) - Ω_Λ) × H0² / H²
   const q =
     (H0 * H0 * (2 * OMEGA_R / a4 + OMEGA_M / a3 - 2 * OMEGA_LAMBDA)) /
     (2 * H * H);
