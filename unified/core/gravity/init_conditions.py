@@ -276,6 +276,106 @@ def make_cloud_3d(
     return ParticleState(positions=positions, velocities=velocities, masses=masses)
 
 
+def make_explosion_2d(
+    n_particles: int,
+    seed: int | None = None,
+    m_particle: float | None = None,
+    r_min: float = 0.5,
+    v_expand: float = 1.5,
+    v_noise: float = 0.05,
+    G: float = G_DEFAULT,
+    M_halo: float = 0.0,
+    a_halo: float = 5.0,
+    **_,
+) -> ParticleState:
+    """Newtonian explosion in 2D: a dense cluster of particles blasted outward.
+
+    Velocities follow a linear radial field (v ∝ r) so the blast expands without
+    shell-crossing. Gravity decelerates all particles; fast outer ones escape while
+    slower inner ones fall back and swirl, eventually settling into a dense rotating
+    core reminiscent of a globular cluster lobbing ejecta into the surrounding field.
+
+    Parameters
+    ----------
+    r_min : float
+        Initial compact radius of the explosion source.
+    v_expand : float
+        Blast speed at the outer edge (code units). Below ≈ 1.1 everything recollapses;
+        above it, outer ejecta escape while the inner core remains gravitationally bound.
+    v_noise : float
+        Fractional random transverse noise — breaks perfect radial symmetry.
+    """
+    rng = np.random.default_rng(seed)
+    if m_particle is None:
+        m_particle = 1.0 / n_particles
+
+    # Uniform area density: r = r_min * sqrt(u)
+    u = rng.random(n_particles, dtype=float)
+    r = r_min * np.sqrt(u)
+    theta = 2.0 * np.pi * rng.random(n_particles, dtype=float)
+    x = r * np.cos(theta)
+    y = r * np.sin(theta)
+    positions = np.column_stack([x, y]).astype(float)
+
+    # Linear radial blast velocity: v_r = v_expand * (r / r_min)
+    r_safe = np.maximum(r, 1e-12)
+    v_rad = v_expand * r / max(r_min, 1e-12)
+    noise = v_noise * v_expand
+    vx = v_rad * (x / r_safe) + noise * rng.standard_normal(n_particles)
+    vy = v_rad * (y / r_safe) + noise * rng.standard_normal(n_particles)
+    velocities = np.column_stack([vx, vy]).astype(float)
+
+    masses = np.full(n_particles, float(m_particle), dtype=float)
+    return ParticleState(positions=positions, velocities=velocities, masses=masses)
+
+
+def make_explosion_3d(
+    n_particles: int,
+    seed: int | None = None,
+    m_particle: float | None = None,
+    r_min: float = 0.5,
+    v_expand: float = 1.5,
+    v_noise: float = 0.05,
+    G: float = G_DEFAULT,
+    M_halo: float = 0.0,
+    a_halo: float = 5.0,
+    **_,
+) -> ParticleState:
+    """Newtonian explosion in 3D: a dense sphere of particles blasted outward.
+
+    Same linear radial velocity field as make_explosion_2d, in full 3D.
+    Positions are drawn uniformly in volume (r ∝ cbrt(uniform)).
+    """
+    rng = np.random.default_rng(seed)
+    if m_particle is None:
+        m_particle = 1.0 / n_particles
+
+    # Uniform volume density: r = r_min * u^(1/3)
+    u = rng.random(n_particles, dtype=float)
+    r = r_min * u ** (1.0 / 3.0)
+
+    # Uniform directions on the unit sphere
+    cos_phi = 1.0 - 2.0 * rng.random(n_particles, dtype=float)
+    sin_phi = np.sqrt(np.maximum(1.0 - cos_phi ** 2, 0.0))
+    theta = 2.0 * np.pi * rng.random(n_particles, dtype=float)
+    x = r * sin_phi * np.cos(theta)
+    y = r * sin_phi * np.sin(theta)
+    z = r * cos_phi
+    positions = np.column_stack([x, y, z]).astype(float)
+
+    # Linear radial blast velocity
+    r_safe = np.maximum(r, 1e-12)
+    v_rad = v_expand * r / max(r_min, 1e-12)
+    noise = v_noise * v_expand
+    vx = v_rad * (x / r_safe) + noise * rng.standard_normal(n_particles)
+    vy = v_rad * (y / r_safe) + noise * rng.standard_normal(n_particles)
+    vz = v_rad * (z / r_safe) + noise * rng.standard_normal(n_particles)
+    velocities = np.column_stack([vx, vy, vz]).astype(float)
+
+    masses = np.full(n_particles, float(m_particle), dtype=float)
+    return ParticleState(positions=positions, velocities=velocities, masses=masses)
+
+
 def make_uniform_2d(n: int, seed: int | None = None) -> ParticleState:
     """Return a nearly uniform 2D particle distribution with tiny noise.
 

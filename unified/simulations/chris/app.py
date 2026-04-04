@@ -20,6 +20,7 @@ from core.gravity.integrators import leapfrog_step
 from core.gravity.collisions import resolve_collisions
 from core.gravity.init_conditions import (
     make_disk_2d, make_cloud_2d, make_disk_3d, make_cloud_3d,
+    make_explosion_2d, make_explosion_3d,
 )
 
 # ============================================================================
@@ -71,6 +72,26 @@ SCENARIOS = {
             "dt": 0.02, "softening": 0.1, "collisions": False,
         },
     },
+    "explosion3d": {
+        "name": "3D Newtonian Explosion",
+        "description": "Dense sphere blasted outward; gravity pulls ejecta back into a globular cluster (3D)",
+        "factory": "make_explosion_3d",
+        "defaults": {
+            "n_particles": 500, "r_min": 0.5,
+            "m_particle": 0.002, "v_expand": 1.5,
+            "dt": 0.005, "softening": 0.05, "collisions": False,
+        },
+    },
+    "explosion2d": {
+        "name": "2D Newtonian Explosion",
+        "description": "Dense disk blasted outward; gravity pulls ejecta back into a globular cluster (2D)",
+        "factory": "make_explosion_2d",
+        "defaults": {
+            "n_particles": 500, "r_min": 0.5,
+            "m_particle": 0.002, "v_expand": 1.5,
+            "dt": 0.005, "softening": 0.05, "collisions": False,
+        },
+    },
 }
 
 IC_FACTORIES = {
@@ -78,6 +99,8 @@ IC_FACTORIES = {
     "make_disk_3d": make_disk_3d,
     "make_cloud_2d": make_cloud_2d,
     "make_cloud_3d": make_cloud_3d,
+    "make_explosion_2d": make_explosion_2d,
+    "make_explosion_3d": make_explosion_3d,
 }
 
 
@@ -108,7 +131,8 @@ class LeapfrogSimulator:
         factory_kwargs: dict = {}
         for key in ("n_particles", "seed", "M_star", "m_particle",
                      "r_min", "r_max", "thickness", "angular_fraction",
-                     "velocity_noise", "position_noise", "M_halo", "a_halo"):
+                     "velocity_noise", "position_noise", "M_halo", "a_halo",
+                     "v_expand", "v_noise"):
             if key in cfg:
                 factory_kwargs[key] = cfg[key]
         factory_kwargs["G"] = self.G

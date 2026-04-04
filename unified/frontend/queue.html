@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Queue &amp; Logs — Gravity Simulation</title>
+  <style>
+    :root {
+      --bg: #0d0d12;
+      --card-bg: #14141c;
+      --card-border: #2a2a35;
+      --card-hover: #1c1c28;
+      --input-bg: #1a1a22;
+      --input-border: #3a3a48;
+      --input-focus: #4a6cf7;
+      --text: #e4e4e8;
+      --text-muted: #9ca3af;
+      --accent: #4a6cf7;
+      --accent-glow: rgba(74, 108, 247, 0.15);
+      --danger: #ef4444;
+      --success: #22c55e;
+      --warn: #f59e0b;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── Top nav ── */
+    .topnav {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 12px 24px;
+      border-bottom: 1px solid var(--card-border);
+      background: var(--card-bg);
+    }
+    .topnav a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 500;
+      padding: 5px 12px;
+      border-radius: 6px;
+      transition: color 0.15s, background 0.15s;
+    }
+    .topnav a:hover { color: var(--text); background: var(--card-hover); }
+    .topnav a.active { color: var(--accent); background: var(--accent-glow); }
+
+    /* ── Page layout ── */
+    .page { max-width: 1300px; margin: 0 auto; padding: 28px 24px 48px; }
+    h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 24px; }
+    h1 span { color: var(--accent); }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 380px 1fr;
+      gap: 20px;
+      align-items: start;
+    }
+    @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 20px;
+    }
+    .card-title {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+    }
+
+    /* ── Form sections ── */
+    .form-section {
+      border-top: 1px solid var(--card-border);
+      padding-top: 14px;
+      margin-top: 14px;
+    }
+    .form-section:first-child { border-top: none; padding-top: 0; margin-top: 0; }
+    .section-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--accent);
+      margin-bottom: 10px;
+      display: block;
+    }
+
+    label { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
+    .field { margin-bottom: 10px; }
+    .field:last-child { margin-bottom: 0; }
+
+    input[type="number"], input[type="text"], select {
+      width: 100%;
+      padding: 7px 10px;
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      border-radius: 7px;
+      color: var(--text);
+      font-size: 13px;
+      transition: border-color 0.15s;
+    }
+    input[type="number"]:focus, input[type="text"]:focus, select:focus {
+      outline: none;
+      border-color: var(--input-focus);
+    }
+    input[type="range"] { width: 100%; accent-color: var(--accent); margin-top: 4px; }
+
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+    .hint {
+      font-size: 11px;
+      color: var(--text-muted);
+      line-height: 1.4;
+      margin-top: 3px;
+      display: block;
+    }
+    .hint.warn { color: var(--warn); }
+
+    /* Radio group */
+    .radio-group { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 2px; }
+    .radio-group label {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 13px; color: var(--text);
+      cursor: pointer; margin-bottom: 0;
+    }
+
+    /* Checkbox row */
+    .check-row { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 4px; }
+    .check-row label {
+      display: flex; align-items: center; gap: 7px;
+      font-size: 13px; color: var(--text);
+      cursor: pointer; margin-bottom: 0;
+    }
+    input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px; }
+
+    /* Mass labels */
+    .mass-label { font-size: 11px; color: var(--text-muted); margin-top: 3px; line-height: 1.5; }
+
+    /* Submit button */
+    .btn-run {
+      width: 100%;
+      margin-top: 16px;
+      padding: 10px 20px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, box-shadow 0.15s;
+    }
+    .btn-run:hover { background: #5b7df8; box-shadow: 0 0 20px var(--accent-glow); }
+    .btn-run:disabled { background: #3a3a48; color: var(--text-muted); cursor: not-allowed; box-shadow: none; }
+    #runStatus { margin-top: 8px; font-size: 12px; color: var(--text-muted); min-height: 1.2em; }
+    #runStatus a { color: var(--accent); text-decoration: none; }
+    #runStatus a:hover { text-decoration: underline; }
+    #runStatus.ok { color: var(--success); }
+    #runStatus.err { color: var(--danger); }
+
+    /* ── Right column ── */
+    .right-col { display: flex; flex-direction: column; gap: 16px; }
+
+    /* Queue status */
+    #queueList { list-style: none; }
+    #queueList li {
+      padding: 8px 0;
+      border-bottom: 1px solid var(--card-border);
+      font-size: 13px;
+    }
+    #queueList li:last-child { border-bottom: none; }
+    .q-pct { font-variant-numeric: tabular-nums; color: var(--accent); margin-right: 8px; font-weight: 600; }
+    .q-done { color: var(--text-muted); }
+    .q-err  { color: var(--danger); }
+    .q-mine { font-style: italic; color: var(--text-muted); font-size: 11px; margin-left: 6px; }
+
+    .progress-wrap { background: #0a0a0f; border-radius: 4px; height: 6px; overflow: hidden; margin-top: 6px; }
+    .progress-bar  { height: 100%; background: var(--accent); transition: width 0.3s; border-radius: 4px; }
+    .step-info { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+
+    /* Log */
+    #logOutput {
+      font-family: ui-monospace, 'Cascadia Code', monospace;
+      font-size: 11.5px;
+      line-height: 1.5;
+      color: var(--text-muted);
+      background: #08080e;
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 14px;
+      height: 340px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    #logOutput:empty::before {
+      content: 'No run in progress. Start a simulation to see live output.';
+      color: #4a4a5a;
+    }
+  </style>
+</head>
+<body>
+  <nav class="topnav">
+    <a href="index.html">Hub</a>
+    <a href="viewer.html">Viewer</a>
+    <a href="queue.html" class="active">Queue</a>
+  </nav>
+
+  <div class="page">
+    <h1>Run <span>Queue</span> &amp; Logs</h1>
+
+    <div class="layout">
+      <!-- ── Left: New simulation form ── -->
+      <div class="card">
+        <div class="card-title">New simulation</div>
+
+        <!-- Spatial dimension + IC -->
+        <div class="form-section">
+          <span class="section-label">Initial Conditions</span>
+          <div class="field">
+            <label>Spatial dimension</label>
+            <div class="radio-group">
+              <label><input type="radio" name="dim" value="2d"> 2D flat disk</label>
+              <label><input type="radio" name="dim" value="3d" checked> 3D galaxy</label>
+            </div>
+            <span class="hint">3D looks more like a spiral galaxy; 2D is faster.</span>
+          </div>
+          <div class="field">
+            <label for="runIc">Particle distribution</label>
+            <select id="runIc">
+              <option value="disk">Disk — annular ring with circular orbits</option>
+              <option value="cloud">Cloud — random spherical spread</option>
+              <option value="explosion">Explosion — compact cluster blasted outward</option>
+            </select>
+            <span class="hint" id="icHint">Disk gives spiral arms; cloud gives chaotic collapse; expansion simulates the Big Bang.</span>
+          </div>
+        </div>
+
+        <!-- Physics -->
+        <div class="form-section">
+          <span class="section-label">Physics Setup</span>
+          <div class="two-col">
+            <div class="field">
+              <label for="runN">Particles</label>
+              <input type="number" id="runN" min="1" max="10000" value="500">
+              <span class="hint">500–2000 is a good range.</span>
+            </div>
+            <div class="field">
+              <label for="runSteps">Time steps</label>
+              <input type="number" id="runSteps" min="1" max="1000000" value="1000">
+              <span class="hint">20k–50k for full orbits.</span>
+            </div>
+          </div>
+          <div class="two-col">
+            <div class="field">
+              <label for="runDt">Time step Δt</label>
+              <input type="number" id="runDt" step="0.001" min="0.0001" value="0.01">
+              <span class="hint">Smaller = more accurate.</span>
+            </div>
+            <div class="field">
+              <label for="runReplayEvery">Snapshot every N steps</label>
+              <input type="number" id="runReplayEvery" min="1" max="10000" value="20">
+            </div>
+          </div>
+          <span id="replayEstimate" class="hint" style="margin-top:0"></span>
+        </div>
+
+        <!-- Mass ratio -->
+        <div class="form-section">
+          <span class="section-label">Star / Particle Mass</span>
+          <div class="field">
+            <label for="runMassSlider">Mass ratio (star : particle)</label>
+            <input type="range" id="runMassSlider" min="2" max="5" step="0.01" value="3">
+            <div class="mass-label" id="massRatioLabel">Ratio 1000 : 1 — m_particle = 0.001</div>
+            <div class="mass-label" id="massKgLabel" style="margin-top:2px"></div>
+          </div>
+        </div>
+
+        <!-- Spatial -->
+        <div class="form-section">
+          <span class="section-label">Spatial Setup</span>
+          <div class="two-col">
+            <div class="field">
+              <label for="runRmin" id="rminLabel">r_min (inner edge)</label>
+              <input type="number" id="runRmin" step="0.1" min="0.01" value="0.5">
+              <span class="hint" id="rminHint">Disk only. Keep ≥ 0.5.</span>
+            </div>
+            <div class="field" id="rmaxRow">
+              <label for="runRmax">r_max (outer edge)</label>
+              <input type="number" id="runRmax" step="0.1" min="0.1" value="4">
+            </div>
+          </div>
+          <!-- Explosion-only: v_expand -->
+          <div class="field" id="vExpandRow" style="display:none">
+            <label for="runVExpand">Blast speed v_expand</label>
+            <input type="range" id="runVExpandSlider" min="0.3" max="4" step="0.05" value="1.5">
+            <div class="mass-label" id="vExpandLabel">v_expand = 1.50 — ejecta escape, core stays bound</div>
+            <input type="hidden" id="runVExpand" value="1.5">
+            <span class="hint">Speed at the outer edge. ≈ 1.1 = escape threshold; below → everything recollapses into a dense swarm; above → outer ejecta fly free.</span>
+          </div>
+          <div class="two-col">
+            <div class="field">
+              <label for="runSoftening">Softening ε</label>
+              <input type="number" id="runSoftening" step="0.01" min="0.001" value="0.05">
+              <span class="hint">0.05–0.1 is typical.</span>
+            </div>
+            <div class="field">
+              <label for="runSeed">Random seed</label>
+              <input type="number" id="runSeed" value="42">
+              <span class="hint">Same seed = same layout.</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Halo -->
+        <div class="form-section">
+          <span class="section-label">Dark Matter Halo</span>
+          <div class="field">
+            <label for="runMHalo">Halo mass M_halo</label>
+            <input type="range" id="runMHalo" min="0" max="50" step="0.5" value="0">
+            <div class="mass-label" id="mhaloLabel">M_halo = 0 (off)</div>
+            <span class="hint">0 = none; try 5–20 for realistic spiral structure.</span>
+          </div>
+          <div class="field">
+            <label for="runAHalo">Halo scale radius a_halo</label>
+            <input type="number" id="runAHalo" step="0.5" min="0.1" max="100" value="5">
+            <span class="hint">Roughly half of r_max is a good starting point.</span>
+          </div>
+        </div>
+
+        <!-- Run options -->
+        <div class="form-section">
+          <span class="section-label">Run Options</span>
+          <div class="check-row">
+            <label><input type="checkbox" id="runGpu" checked> GPU acceleration</label>
+            <label><input type="checkbox" id="runCollisions"> Enable collisions</label>
+          </div>
+          <span class="hint" style="margin-top:6px">GPU uses CuPy (CUDA) for faster force computation. Collisions = particles merge when very close.</span>
+          <div class="field" style="margin-top:10px" id="collideRadiusRow">
+            <label for="runRCollide">Collision radius (auto if blank)</label>
+            <input type="number" id="runRCollide" min="0.001" step="0.01" placeholder="auto">
+          </div>
+          <div class="field" style="margin-top:10px">
+            <label for="runName">Run name</label>
+            <input type="text" id="runName" placeholder="expansion_500_1000">
+            <span class="hint">Leave blank to use suggested name.</span>
+          </div>
+          <input type="hidden" id="runMParticle" value="">
+        </div>
+
+        <button class="btn-run" id="runBtn">Run simulation</button>
+        <div id="runStatus"></div>
+      </div>
+
+      <!-- ── Right: Status + Log ── -->
+      <div class="right-col">
+        <div class="card">
+          <div class="card-title">Queue status</div>
+          <ul id="queueList">
+            <li class="q-done">No runs in progress.</li>
+          </ul>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Live log</div>
+          <pre id="logOutput"></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const apiBase = '';
+    let currentJobId = null;
+    let queuePollId = null;
+    let logPollId = null;
+
+    const M_SUN = 1.989e30;
+    function fmtKg(code) {
+      if (code <= 0) return '— kg';
+      const kg = code * M_SUN;
+      const exp = Math.floor(Math.log10(kg));
+      const m = (kg / Math.pow(10, exp)).toFixed(2);
+      const sup = String(exp).split('').map(function(c){
+        return ({'-':'⁻','0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹'})[c] || c;
+      }).join('');
+      return m + '×10' + sup + ' kg';
+    }
+
+    function suggestName() {
+      const ic = document.getElementById('runIc').value;
+      const prefix = ic === 'explosion' ? 'explosion' : ic === 'cloud' ? 'cloud' : 'disk';
+      return prefix + '_' + (document.getElementById('runN').value || 500) + '_' + (document.getElementById('runSteps').value || 1000);
+    }
+
+    const IC_HINTS = {
+      disk: 'Disk gives spiral arms and long-lived orbital structures.',
+      cloud: 'Cloud gives chaotic collapse and filament formation.',
+      explosion: 'Explosion: a dense cluster blasted outward by Newtonian physics. Fast ejecta escape; slow particles fall back and swirl into a dense globular-cluster-like core.',
+    };
+
+    function updateIcFields() {
+      const ic = document.getElementById('runIc').value;
+      const isExpansion = ic === 'explosion';
+      const isDisk = ic === 'disk';
+
+      document.getElementById('icHint').textContent = IC_HINTS[ic] || '';
+      document.getElementById('vExpandRow').style.display = isExpansion ? '' : 'none';
+      document.getElementById('rmaxRow').style.display = isExpansion ? 'none' : '';
+
+      const rminLabel = document.getElementById('rminLabel');
+      const rminHint = document.getElementById('rminHint');
+      if (isExpansion) {
+        rminLabel.textContent = 'Initial blast radius';
+        rminHint.textContent = 'Compact source radius. Try 0.2–1.0. Smaller = more dramatic explosion.';
+        document.getElementById('runRmin').value = 0.5;
+        // Use smaller dt for expansion by default
+        document.getElementById('runDt').value = 0.005;
+      } else if (isDisk) {
+        rminLabel.textContent = 'r_min (inner edge)';
+        rminHint.textContent = 'Disk only. Keep ≥ 0.5.';
+        document.getElementById('runDt').value = 0.01;
+      } else {
+        rminLabel.textContent = 'r_min (not used)';
+        rminHint.textContent = 'Not applicable for cloud IC.';
+        document.getElementById('runDt').value = 0.01;
+      }
+      document.getElementById('runName').placeholder = suggestName();
+    }
+
+    function updateVExpand() {
+      const v = parseFloat(document.getElementById('runVExpandSlider').value);
+      document.getElementById('runVExpand').value = v;
+      const critical = 1.1;
+      const status = v < critical - 0.05 ? '— bound (core collapses back)'
+                   : v > critical + 0.05 ? '— ejecta escape, core stays bound'
+                   : '— near escape threshold';
+      document.getElementById('vExpandLabel').textContent = 'v_expand = ' + v.toFixed(2) + ' ' + status;
+    }
+
+    function updateReplayEstimate() {
+      const steps = parseInt(document.getElementById('runSteps').value) || 1000;
+      const every = parseInt(document.getElementById('runReplayEvery').value) || 20;
+      const n = parseInt(document.getElementById('runN').value) || 500;
+      const snaps = 1 + Math.floor(steps / every);
+      const mb = ((snaps * (n + 1) * 3 * 18) / (1024 * 1024)).toFixed(1);
+      const el = document.getElementById('replayEstimate');
+      el.textContent = snaps.toLocaleString() + ' snapshots — est. ~' + mb + ' MB';
+      el.className = 'hint' + (snaps > 2000 || parseFloat(mb) > 100 ? ' warn' : '');
+    }
+
+    function updateMassRatio() {
+      const log = parseFloat(document.getElementById('runMassSlider').value);
+      const ratio = Math.round(Math.pow(10, log));
+      const mp = 1 / ratio;
+      document.getElementById('runMParticle').value = mp;
+      document.getElementById('massRatioLabel').textContent =
+        'Ratio ' + ratio.toLocaleString() + ' : 1 — m_particle = ' + mp.toPrecision(3);
+      document.getElementById('massKgLabel').textContent =
+        'Star ≈ ' + fmtKg(1) + ' · Particle ≈ ' + fmtKg(mp);
+    }
+
+    function updateHaloLabel() {
+      const v = parseFloat(document.getElementById('runMHalo').value);
+      document.getElementById('mhaloLabel').textContent = v > 0 ? 'M_halo = ' + v : 'M_halo = 0 (off)';
+    }
+
+    function renderQueue(data) {
+      const ul = document.getElementById('queueList');
+      const running = data.running || null;
+      const queue = data.queue || [];
+      const completed = data.completed || [];
+      const items = [];
+
+      if (running) {
+        const pct = running.progress_pct || 0;
+        const mine = currentJobId === running.job_id;
+        items.push('<li>' +
+          '<strong><span class="q-pct">' + pct + '%</span>Running: ' + esc(running.name) + '</strong>' +
+          (mine ? '<span class="q-mine">(yours)</span>' : '') +
+          '<div class="progress-wrap"><div class="progress-bar" style="width:' + pct + '%"></div></div>' +
+          '<div class="step-info">Step ' + (running.step || 0).toLocaleString() + ' / ' + (running.total_steps || 0).toLocaleString() + '</div>' +
+          '</li>');
+      }
+
+      queue.forEach(function(q) {
+        const mine = currentJobId === q.job_id;
+        items.push('<li>Queued #' + q.position + ': ' + esc(q.name) + (mine ? '<span class="q-mine">(yours)</span>' : '') + '</li>');
+      });
+
+      const myDone = currentJobId && completed.find(function(c) { return c.job_id === currentJobId; });
+      if (myDone) {
+        if (myDone.ok) {
+          items.push('<li class="q-done">Done: ' + esc(myDone.name) + ' — <a href="viewer.html#replay&name=' + encodeURIComponent(myDone.name) + '">Open in viewer</a></li>');
+        } else {
+          items.push('<li class="q-err">Failed: ' + esc(myDone.error || 'Unknown error') + '</li>');
+        }
+      }
+
+      if (!items.length) items.push('<li class="q-done">No runs in progress.</li>');
+      ul.innerHTML = items.join('');
+    }
+
+    function esc(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    function fetchLogs() {
+      fetch(apiBase + '/api/run/logs')
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+          const pre = document.getElementById('logOutput');
+          if (d.lines && d.lines.length) {
+            pre.textContent = d.lines.join('\n');
+            pre.scrollTop = pre.scrollHeight;
+          }
+        }).catch(function(){});
+    }
+
+    function pollStatus() {
+      fetch(apiBase + '/api/run/status')
+        .then(function(r){ return r.json(); })
+        .then(function(data){
+          renderQueue(data);
+          if (data.running) fetchLogs();
+          if (currentJobId) {
+            const done = (data.completed || []).find(function(c){ return c.job_id === currentJobId; });
+            if (done) {
+              stopPolling();
+              const el = document.getElementById('runStatus');
+              if (done.ok) {
+                el.className = 'ok';
+                el.innerHTML = 'Done: <a href="viewer.html#replay&name=' + encodeURIComponent(done.name) + '">' + esc(done.name) + ' — open in viewer</a>';
+              } else {
+                el.className = 'err';
+                el.textContent = 'Error: ' + (done.error || 'Unknown');
+              }
+            }
+          }
+        }).catch(function(){});
+    }
+
+    function startPolling() {
+      if (!queuePollId) queuePollId = setInterval(pollStatus, 1500);
+      if (!logPollId)   logPollId   = setInterval(fetchLogs, 1000);
+    }
+
+    function stopPolling() {
+      clearInterval(queuePollId); queuePollId = null;
+      clearInterval(logPollId);   logPollId   = null;
+      currentJobId = null;
+    }
+
+    // Wire up inputs
+    ['runN','runSteps'].forEach(function(id){
+      document.getElementById(id).addEventListener('input', function(){
+        document.getElementById('runName').placeholder = suggestName();
+        updateReplayEstimate();
+      });
+    });
+    document.getElementById('runIc').addEventListener('change', function(){
+      updateIcFields();
+      updateReplayEstimate();
+    });
+    document.querySelectorAll('input[name="dim"]').forEach(function(el){
+      el.addEventListener('input', function(){ document.getElementById('runName').placeholder = suggestName(); });
+    });
+    document.getElementById('runReplayEvery').addEventListener('input', updateReplayEstimate);
+    document.getElementById('runMassSlider').addEventListener('input', updateMassRatio);
+    document.getElementById('runMHalo').addEventListener('input', updateHaloLabel);
+    document.getElementById('runVExpandSlider').addEventListener('input', updateVExpand);
+
+    // Initial state
+    document.getElementById('runName').placeholder = suggestName();
+    updateMassRatio();
+    updateHaloLabel();
+    updateReplayEstimate();
+    updateIcFields();
+    updateVExpand();
+
+    document.getElementById('runBtn').addEventListener('click', function() {
+      const steps      = parseInt(document.getElementById('runSteps').value) || 1000;
+      const every      = parseInt(document.getElementById('runReplayEvery').value) || 20;
+      const n          = parseInt(document.getElementById('runN').value) || 500;
+      const snaps      = 1 + Math.floor(steps / every);
+      const estMB      = (snaps * (n + 1) * 3 * 18) / (1024 * 1024);
+      if (snaps > 2000 || estMB > 100) {
+        if (!confirm('This replay will be very large (~' + Math.round(estMB) + ' MB). Increase "Snapshot every N steps" to reduce size. Continue?')) return;
+      }
+
+      const dim       = document.querySelector('input[name="dim"]:checked').value;
+      const ic        = document.getElementById('runIc').value;
+      const name      = document.getElementById('runName').value.trim() || suggestName();
+      const mp        = document.getElementById('runMParticle').value.trim();
+      const mHalo     = parseFloat(document.getElementById('runMHalo').value) || 0;
+      const rColStr   = document.getElementById('runRCollide').value.trim();
+
+      const payload = {
+        name: name,
+        dim: dim,
+        ic: ic,
+        n: n,
+        steps: steps,
+        dt: parseFloat(document.getElementById('runDt').value),
+        r_min: parseFloat(document.getElementById('runRmin').value),
+        r_max: parseFloat(document.getElementById('runRmax').value),
+        replay_every: every,
+        softening: parseFloat(document.getElementById('runSoftening').value),
+        seed: parseInt(document.getElementById('runSeed').value, 10),
+        gpu: document.getElementById('runGpu').checked,
+        M_star: 1,
+        m_particle: mp !== '' ? parseFloat(mp) : null,
+        collisions: document.getElementById('runCollisions').checked,
+        M_halo: mHalo,
+        a_halo: parseFloat(document.getElementById('runAHalo').value) || 5,
+        r_collide: rColStr !== '' ? parseFloat(rColStr) : null,
+        v_expand: parseFloat(document.getElementById('runVExpand').value) || 1.5,
+      };
+
+      const statusEl = document.getElementById('runStatus');
+      statusEl.className = '';
+      statusEl.textContent = 'Submitting…';
+      document.getElementById('runBtn').disabled = true;
+
+      fetch(apiBase + '/api/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+        .then(function(r){ return r.json(); })
+        .then(function(body){
+          document.getElementById('runBtn').disabled = false;
+          if (!body.ok) {
+            statusEl.className = 'err';
+            statusEl.textContent = 'Error: ' + (body.error || 'Unknown');
+            return;
+          }
+          currentJobId = body.job_id;
+          statusEl.textContent = body.position_in_queue <= 1 ? 'Running…' : 'Queued #' + body.position_in_queue + '…';
+          startPolling();
+          pollStatus();
+        })
+        .catch(function(err){
+          document.getElementById('runBtn').disabled = false;
+          statusEl.className = 'err';
+          statusEl.textContent = 'Error: ' + err.message;
+        });
+    });
+
+    // Boot: load current queue state
+    pollStatus();
+  </script>
+</body>
+</html>

@@ -30,6 +30,7 @@ import threading
 import importlib
 import os
 import re
+import uuid
 from pathlib import Path
 from typing import Optional, Dict, Any
 from concurrent.futures import ThreadPoolExecutor
@@ -55,7 +56,7 @@ SIMULATION_REGISTRY: Dict[str, Dict[str, Any]] = {
         "module": "simulations.chris.app",
         "icon": "🌀",
         "tags": ["physics", "CPU", "N-body", "galaxy"],
-        "scenarios": ["disk3d", "disk2d", "cloud3d", "cloud2d"],
+        "scenarios": ["disk3d", "disk2d", "cloud3d", "cloud2d", "explosion3d", "explosion2d"],
     },
     "ethansim": {
         "id": "ethansim",
@@ -108,6 +109,20 @@ serialization_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="s
 
 ACTIVE_RUNNERS: Dict[str, Any] = {}
 RUNNER_LOCK = threading.Lock()
+
+# ============================================================================
+# BATCH RUN QUEUE STATE
+# ============================================================================
+
+_run_queue: list = []           # pending: {job_id, name, params}
+_current_run: Optional[Dict] = None  # {job_id, name, progress_pct, step, total_steps}
+_completed: list = []           # last 20 finished/failed jobs
+_run_log: list = []             # last 500 stdout lines of the running job
+_queue_lock = threading.Lock()
+_queue_condition = threading.Condition(_queue_lock)
+_worker_started = False
+_MAX_COMPLETED = 20
+_RUN_LOG_MAX = 500
 
 # ============================================================================
 # SIMULATION RUNNER
@@ -206,6 +221,288 @@ async def delete_replay(name: str):
     except OSError as e:
         raise HTTPException(status_code=500, detail=str(e))
     return {"ok": True}
+
+
+# ============================================================================
+# BATCH RUN QUEUE
+# ============================================================================
+
+class RunPayload(BaseModel):
+    name: str = "run"
+    dim: str = "3d"
+    ic: str = "disk"
+    n: int = 500
+    steps: int = 1000
+    dt: float = 0.01
+    r_min: float = 0.5
+    r_max: float = 4.0
+    replay_every: int = 20
+    softening: float = 0.05
+    seed: int = 42
+    gpu: bool = True
+    M_star: float = 1.0
+    m_particle: Optional[float] = None
+    collisions: bool = False
+    r_collide: Optional[float] = None
+    M_halo: float = 0.0
+    a_halo: float = 5.0
+    v_expand: float = 1.5
+
+
+def _run_sim_job(job_id: str, params: dict) -> None:
+    """Run a batch simulation in the worker thread and save a replay JSON."""
+    global _current_run
+
+    import numpy as np
+    from core.gravity.state import ParticleState
+    from core.gravity.init_conditions import (
+        make_disk_2d, make_disk_3d, make_cloud_2d, make_cloud_3d,
+        make_explosion_2d, make_explosion_3d,
+    )
+    from core.gravity.forces_cpu import (
+        compute_accelerations_vectorized as _cpu_accel,
+        compute_halo_acceleration as _halo_accel,
+    )
+    from core.gravity.integrators import leapfrog_step
+    from core.gravity.collisions import resolve_collisions
+
+    name      = params["name"]
+    dim       = params.get("dim", "3d").lower()
+    ic        = params.get("ic", "disk").lower()
+    n         = int(params["n"])
+    steps     = int(params["steps"])
+    dt        = float(params["dt"])
+    r_min     = float(params.get("r_min", 0.5))
+    r_max     = float(params.get("r_max", 4.0))
+    replay_every = int(params.get("replay_every", 20))
+    softening = float(params.get("softening", 0.05))
+    seed      = int(params.get("seed", 42))
+    use_gpu   = bool(params.get("gpu", True))
+    v_expand  = float(params.get("v_expand", 1.5))
+    G         = 1.0
+    M_star    = float(params.get("M_star", 1.0))
+    m_particle = params.get("m_particle")
+    if m_particle is not None:
+        m_particle = float(m_particle)
+    use_collisions = bool(params.get("collisions", False))
+    M_halo    = float(params.get("M_halo", 0.0))
+    a_halo    = float(params.get("a_halo", 5.0))
+
+    def _log(msg: str) -> None:
+        with _queue_lock:
+            _run_log.append(msg)
+            if len(_run_log) > _RUN_LOG_MAX:
+                del _run_log[: len(_run_log) - _RUN_LOG_MAX]
+        print(f"[Queue] {msg}", flush=True)
+
+    # IC factory selection
+    _factory_map = {
+        ("disk", "3d"): make_disk_3d,
+        ("disk", "2d"): make_disk_2d,
+        ("cloud", "3d"): make_cloud_3d,
+        ("cloud", "2d"): make_cloud_2d,
+        ("explosion", "3d"): make_explosion_3d,
+        ("explosion", "2d"): make_explosion_2d,
+    }
+    factory = _factory_map.get((ic, dim), make_disk_3d)
+
+    factory_kwargs: dict = dict(
+        n_particles=n, seed=seed, M_star=M_star, G=G,
+        r_max=r_max, M_halo=M_halo, a_halo=a_halo,
+    )
+    if m_particle is not None:
+        factory_kwargs["m_particle"] = m_particle
+    if ic == "disk":
+        factory_kwargs["r_min"] = r_min
+    elif ic == "explosion":
+        factory_kwargs["r_min"] = r_min   # explosion uses r_min as initial compact radius
+        factory_kwargs["v_expand"] = v_expand
+
+    _log(f"Initialising {n} particles  ({dim} {ic}, seed={seed})")
+    try:
+        state: ParticleState = factory(**factory_kwargs)
+    except Exception as e:
+        _log(f"ERROR building initial conditions: {e}")
+        raise
+
+    # GPU / CPU force selection
+    _accel_fn = _cpu_accel
+    gpu_label = "CPU"
+    if use_gpu:
+        try:
+            from core.gravity.forces_gpu import compute_accelerations_vectorized as _gpu_accel
+            _gpu_accel(state, softening=softening, G=G)   # warm-up / availability check
+            _accel_fn = _gpu_accel
+            gpu_label = "GPU (CuPy)"
+            _log("GPU force computation enabled (CuPy)")
+        except Exception as e:
+            _log(f"GPU unavailable ({type(e).__name__}: {e}) — falling back to CPU")
+
+    def _accel_with_halo(st: ParticleState) -> np.ndarray:
+        acc = _accel_fn(st, softening=softening, G=G)
+        if M_halo > 0:
+            acc += _halo_accel(st.positions, M_halo, a_halo, G=G)
+        return acc
+
+    _log(f"Running {steps:,} steps  dt={dt}  softening={softening}  {gpu_label}")
+    _log(f"Snapshot every {replay_every} steps  collisions={'on' if use_collisions else 'off'}")
+
+    positions_list: list = []
+    masses_list: list = []
+    step_indices: list = []
+    constant_masses = state.masses.copy()
+    variable_n = False
+    t_start = time.perf_counter()
+    last_pct = -1
+
+    for step_i in range(steps + 1):
+        if step_i % replay_every == 0 or step_i == steps:
+            positions_list.append(state.positions.tolist())
+            step_indices.append(step_i)
+            if use_collisions:
+                masses_list.append(state.masses.tolist())
+                if state.masses.shape[0] != constant_masses.shape[0]:
+                    variable_n = True
+
+        if step_i == steps:
+            break
+
+        state = leapfrog_step(state, dt, _accel_with_halo)
+        if use_collisions:
+            state = resolve_collisions(state)
+
+        pct = int(100 * step_i / steps)
+        if pct != last_pct and pct % 5 == 0:
+            last_pct = pct
+            elapsed = time.perf_counter() - t_start
+            _log(f"  [{pct:3d}%] step {step_i:6d} / {steps}  ({elapsed:.1f}s)")
+            with _queue_lock:
+                if _current_run and _current_run.get("job_id") == job_id:
+                    _current_run["progress_pct"] = pct
+                    _current_run["step"] = step_i
+
+    n_snapshots = len(positions_list)
+    _log(f"Done — {n_snapshots} snapshots. Writing replay JSON…")
+
+    if variable_n or (use_collisions and masses_list):
+        out = {
+            "positions": positions_list,
+            "masses": masses_list,
+            "steps": step_indices,
+            "dt": dt,
+            "n_snapshots": n_snapshots,
+            "variable_n": True,
+            "replay_every": replay_every,
+        }
+    else:
+        out = {
+            "positions": positions_list,
+            "steps": step_indices,
+            "masses": constant_masses.tolist(),
+            "dt": dt,
+            "n_particles": int(constant_masses.shape[0]),
+            "n_snapshots": n_snapshots,
+            "variable_n": False,
+            "replay_every": replay_every,
+        }
+
+    REPLAYS_DIR.mkdir(parents=True, exist_ok=True)
+    out_path = REPLAYS_DIR / f"{name}.json"
+    with open(out_path, "w") as f:
+        json.dump(out, f)
+    size_mb = out_path.stat().st_size / (1024 * 1024)
+    total = time.perf_counter() - t_start
+    _log(f"Saved {out_path.name}  ({size_mb:.1f} MB)  total time {total:.1f}s")
+
+
+def _queue_worker() -> None:
+    global _current_run
+    while True:
+        with _queue_condition:
+            while not _run_queue:
+                _queue_condition.wait()
+            job = _run_queue.pop(0)
+
+        job_id = job["job_id"]
+        name   = job["name"]
+        params = job["params"]
+
+        with _queue_lock:
+            _run_log.clear()
+            _current_run = {
+                "job_id": job_id,
+                "name": name,
+                "progress_pct": 0,
+                "step": 0,
+                "total_steps": params["steps"],
+            }
+
+        ok = True
+        error_msg = None
+        try:
+            _run_sim_job(job_id, params)
+        except Exception as e:
+            ok = False
+            error_msg = str(e)
+            print(f"[Queue] Job {job_id} failed: {e}", flush=True)
+            traceback.print_exc()
+
+        with _queue_lock:
+            _current_run = None
+            _completed.append({"job_id": job_id, "name": name, "ok": ok, **({"error": error_msg} if error_msg else {})})
+            del _completed[:-_MAX_COMPLETED]
+
+
+def _ensure_queue_worker() -> None:
+    global _worker_started
+    if _worker_started:
+        return
+    with _queue_lock:
+        if _worker_started:
+            return
+        t = threading.Thread(target=_queue_worker, daemon=True, name="queue-worker")
+        t.start()
+        _worker_started = True
+
+
+@app.post("/api/run")
+async def submit_run(payload: RunPayload):
+    safe_name = _sanitize_name(payload.name)
+    params = payload.model_dump()
+    params["name"] = safe_name
+
+    # Cap snapshots to avoid absurdly large files
+    n_snaps = 1 + params["steps"] // params["replay_every"]
+    if n_snaps > 2000:
+        params["replay_every"] = max(params["replay_every"], (params["steps"] + 1998) // 1999)
+
+    job_id = str(uuid.uuid4())
+    with _queue_condition:
+        _run_queue.append({"job_id": job_id, "name": safe_name, "params": params})
+        position = len(_run_queue) + (1 if _current_run else 0)
+        _queue_condition.notify()
+
+    _ensure_queue_worker()
+    return {"ok": True, "job_id": job_id, "name": safe_name, "position_in_queue": position}
+
+
+@app.get("/api/run/status")
+async def run_status():
+    with _queue_lock:
+        running = dict(_current_run) if _current_run else None
+        queue = [
+            {"job_id": q["job_id"], "name": q["name"], "position": i + 1}
+            for i, q in enumerate(_run_queue)
+        ]
+        completed = list(_completed)
+    return {"running": running, "queue": queue, "completed": completed}
+
+
+@app.get("/api/run/logs")
+async def run_logs():
+    with _queue_lock:
+        lines = list(_run_log)
+    return {"lines": lines}
 
 
 # ============================================================================
