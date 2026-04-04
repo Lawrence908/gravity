@@ -142,7 +142,7 @@ NumPy-style docstrings with section headers such as `Parameters`, `Returns`, and
 
 ### Key Abstractions
 
-- **`ParticleState`** (`state.py`): Central dataclass holding `pos`, `vel`, `mass` arrays
+- **`ParticleState`** (`state.py`): Central dataclass holding `positions`, `velocities`, `masses` arrays
 - **`AccelerationFn`** protocol: Callable `(state: ParticleState) -> np.ndarray` — used for swappable force implementations
 - **`AsyncSimulator`** (unified): Base interface all team simulators must implement
 
