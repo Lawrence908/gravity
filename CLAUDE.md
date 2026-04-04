@@ -21,7 +21,7 @@ gravity/
 │   ├── src/gravity/               # Core physics engine (~2,400 LOC)
 │   │   ├── state.py               # ParticleState dataclass
 │   │   ├── forces_cpu.py          # CPU O(N²) gravity + Hernquist halo
-│   │   ├── forces_gpu.py          # GPU acceleration (CuPy/Numba stub)
+│   │   ├── forces_gpu.py          # Optional GPU acceleration via CuPy with runtime fallback handling
 │   │   ├── integrators.py         # Euler and Leapfrog integrators
 │   │   ├── init_conditions.py     # Disk/cloud initial condition generators
 │   │   ├── diagnostics.py         # Energy, angular momentum, SimulationLog
