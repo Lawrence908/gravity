@@ -157,7 +157,7 @@ NumPy-style docstrings with section headers such as `Parameters`, `Returns`, and
 
 - **Integrator**: Leapfrog (symplectic, energy-conserving) preferred; Euler available for comparison
 - **Acceleration law**: Softened Newtonian gravity per particle: `a_i = G * Σ_j m_j * (r_j - r_i) / (|r_j - r_i|² + ε²)^(3/2)`
-- **Softening parameter ε**: Prevents singularities at close range; tune via `GravityConfig.softening`
+- **Softening parameter ε**: Prevents singularities at close range; tune via `GravityConfig.softening_length`
 - **Hernquist halo**: Optional static background potential for galaxy disk stability
 - **Diagnostics**: Total energy (KE + PE) and angular momentum are tracked and should conserve within acceptable drift
 - **Collision merging**: Mass is conserved; momentum is conserved for particle–particle merges; star–particle merges leave the star's velocity unchanged (toy approximation) (`collisions.py`)
