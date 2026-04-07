@@ -1,4 +1,4 @@
-# Base API deps + CuPy for CUDA 12.x wheels (matches most current drivers).
-# If `nvidia-smi` shows CUDA Version 11.x only, swap for: cupy-cuda11x
+# Base API deps + CuPy (CUDA 12.x wheels). Matches Dockerfile default nvidia/cuda:12.x-runtime.
+# If you build from nvidia/cuda:11.8.x-runtime-* instead, replace cupy-cuda12x with cupy-cuda11x.
 -r requirements.txt
 cupy-cuda12x
