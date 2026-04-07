@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Spacetime Expansion — ASTR 311</title>
+    <style>
+      html, body {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      #root {
+        flex: 1;
+        min-height: 0;
+        height: auto !important;
+        overflow: hidden;
+      }
+      .topnav {
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 12px 24px;
+        border-bottom: 1px solid #2a2a35;
+        background: #14141c;
+      }
+      .topnav a {
+        color: #9ca3af;
+        text-decoration: none;
+        font-size: 13px;
+        font-weight: 500;
+        padding: 5px 12px;
+        border-radius: 6px;
+        transition: color 0.15s, background 0.15s;
+      }
+      .topnav a:hover { color: #e4e4e8; background: #1c1c28; }
+      .topnav a.active { color: #4a6cf7; background: rgba(74, 108, 247, 0.15); }
+    </style>
+  </head>
+  <body>
+    <nav class="topnav">
+      <a href="../index.html">Hub</a>
+      <a href="../viewer.html">Viewer</a>
+      <a href="../queue.html">Queue</a>
+      <a href="./" class="active">Spacetime expansion</a>
+    </nav>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
