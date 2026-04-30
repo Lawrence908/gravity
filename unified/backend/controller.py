@@ -722,6 +722,16 @@ REPLAYS_DIR.mkdir(parents=True, exist_ok=True)
 
 app.mount("/replays", StaticFiles(directory=str(REPLAYS_DIR), check_dir=False), name="replays")
 
+# Vite production build lives in frontend/spacetime/dist (see Dockerfile / npm run build).
+# Do not serve frontend/spacetime/index.html in production — it points at /src/main.tsx (dev only).
+SPACETIME_DIST = FRONTEND_DIR / "spacetime" / "dist"
+if SPACETIME_DIST.is_dir():
+    app.mount(
+        "/spacetime",
+        StaticFiles(directory=str(SPACETIME_DIST), html=True),
+        name="spacetime",
+    )
+
 
 @app.get("/")
 async def serve_index():
@@ -735,6 +745,12 @@ async def serve_viewer():
 
 @app.get("/{path:path}")
 async def serve_frontend(path: str):
+    # Never serve the Vite dev index.html (it references /src/main.tsx). Use dist/ via /spacetime mount.
+    if path == "spacetime/index.html":
+        raise HTTPException(
+            status_code=404,
+            detail="Spacetime UI not built. Run: cd frontend/spacetime && npm run build",
+        )
     file_path = FRONTEND_DIR / path
     if file_path.is_file():
         return FileResponse(file_path)

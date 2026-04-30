@@ -215,6 +215,7 @@
     <a href="index.html">Hub</a>
     <a href="viewer.html">Viewer</a>
     <a href="queue.html" class="active">Queue</a>
+    <a href="/spacetime/">Spacetime expansion</a>
   </nav>
 
   <div class="page">
@@ -241,9 +242,9 @@
             <select id="runIc">
               <option value="disk">Disk — annular ring with circular orbits</option>
               <option value="cloud">Cloud — random spherical spread</option>
-              <option value="explosion">Explosion — compact cluster blasted outward</option>
+              <option value="explosion">Expansion — compact cluster blasted outward (Newtonian “Big Bang” toy)</option>
             </select>
-            <span class="hint" id="icHint">Disk gives spiral arms; cloud gives chaotic collapse; expansion simulates the Big Bang.</span>
+            <span class="hint" id="icHint">Disk gives spiral arms; cloud gives chaotic collapse; expansion uses outward velocities like a simple Big Bang model.</span>
           </div>
         </div>
 
@@ -399,15 +400,16 @@
     }
 
     function suggestName() {
-      const ic = document.getElementById('runIc').value;
-      const prefix = ic === 'explosion' ? 'explosion' : ic === 'cloud' ? 'cloud' : 'disk';
-      return prefix + '_' + (document.getElementById('runN').value || 500) + '_' + (document.getElementById('runSteps').value || 1000);
+      // Match chris/web-viewer/queue.html: neutral basename; ic and dim live only in the API payload.
+      const n = document.getElementById('runN').value || 500;
+      const steps = document.getElementById('runSteps').value || 1000;
+      return ('expansion_' + n + '_' + steps).replace(/\s/g, '');
     }
 
     const IC_HINTS = {
       disk: 'Disk gives spiral arms and long-lived orbital structures.',
       cloud: 'Cloud gives chaotic collapse and filament formation.',
-      explosion: 'Explosion: a dense cluster blasted outward by Newtonian physics. Fast ejecta escape; slow particles fall back and swirl into a dense globular-cluster-like core.',
+      explosion: 'Expansion: a dense cluster with radial outward speeds (Newtonian toy). Fast ejecta escape; slower material falls back into a dense core.',
     };
 
     function updateIcFields() {
