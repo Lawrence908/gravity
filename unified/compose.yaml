@@ -8,10 +8,13 @@ networks:
 
 services:
   astr311-unified:
-    build: .
+    build:
+      context: .
+      args:
+        # Must be ≤ host driver CUDA capability; see Dockerfile header if GPU fails with
+        # cudaErrorCompatNotSupportedOnDevice (try 12.0.1-runtime-ubuntu22.04, etc.).
+        CUDA_IMAGE_TAG: 12.1.1-runtime-ubuntu22.04
     container_name: astr311-unified
-    # Pass NVIDIA GPU(s) into the container (requires nvidia-container-toolkit on host).
-    gpus: all
     restart: unless-stopped
     networks:
       - web
@@ -23,6 +26,14 @@ services:
     volumes:
       # Optional: bind mount replays so host and container share (e.g. for generated replays)
       - ./frontend/replays:/app/frontend/replays
+      
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')\" || exit 1"]
       interval: 30s

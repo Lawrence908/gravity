@@ -1,0 +1,8 @@
+# Keep image/context small; spacetime app is built in Docker (see Dockerfile).
+**/node_modules
+**/.git
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.mypy_cache
+*.egg-info
