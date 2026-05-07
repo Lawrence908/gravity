@@ -53,7 +53,12 @@ def _velocity_verlet_step(bodies: list[Body], accelerations: list[np.ndarray], d
 
 
 # Scenarios where we run a second copy with a tiny IC change (chaos / sensitivity demo).
-_GHOST_TWIN_SCENARIO_IDS = frozenset({"three_body"})
+_GHOST_TWIN_SCENARIO_IDS = frozenset({
+    "three_body",
+    "three_body_chaotic",
+    "figure_eight",
+    "three_body_ejection",
+})
 # Relative change applied to one body's velocity in the ghost copy (0.1%).
 _GHOST_VELOCITY_PERTURBATION = 1.001
 
@@ -94,6 +99,71 @@ def create_three_body(positions=None, velocities=None, masses=None):
 
     return [Body(masses[i], positions[i], velocities[i], f"Body {i+1}") for i in range(n)]
 
+
+def _recenter_bodies(bodies: list[Body]) -> None:
+    """Translate positions and velocities to the centre-of-mass frame."""
+    if not bodies:
+        return
+    total_mass = sum(b.mass for b in bodies)
+    if total_mass <= 0:
+        return
+    com_pos = sum(b.mass * b.position for b in bodies) / total_mass
+    com_vel = sum(b.mass * b.velocity for b in bodies) / total_mass
+    for b in bodies:
+        b.position = b.position - com_pos
+        b.velocity = b.velocity - com_vel
+
+
+def create_two_body():
+    """Two masses in a circular orbit in the COM frame (3D with z=0)."""
+    m1, m2 = 5.0, 1.0
+    r_sep = 2.5
+    r1 = r_sep * m2 / (m1 + m2)
+    r2 = r_sep * m1 / (m1 + m2)
+    G = 1.0
+    v_orb = math.sqrt(G * (m1 + m2) / r_sep)
+    v1 = v_orb * m2 / (m1 + m2)
+    v2 = v_orb * m1 / (m1 + m2)
+    bodies = [
+        Body(m1, [-r1, 0.0, 0.0], [0.0, -v1, 0.0], "Body 1"),
+        Body(m2, [r2, 0.0, 0.0], [0.0, v2, 0.0], "Body 2"),
+    ]
+    _recenter_bodies(bodies)
+    return bodies
+
+
+def create_figure_eight():
+    """Equal-mass planar figure-eight orbit (Moore / Chenciner–Montgomery data)."""
+    m = 1.0
+    x1, y1 = -0.97000436, 0.24308753
+    x2, y2 = 0.0, 0.0
+    x3, y3 = 0.97000436, -0.24308753
+    vx1, vy1 = 0.466203685, 0.432365730
+    vx2, vy2 = -0.93240737, -0.86473146
+    vx3, vy3 = 0.466203685, 0.432365730
+    bodies = [
+        Body(m, [x1, y1, 0.0], [vx1, vy1, 0.0], "Body 1"),
+        Body(m, [x2, y2, 0.0], [vx2, vy2, 0.0], "Body 2"),
+        Body(m, [x3, y3, 0.0], [vx3, vy3, 0.0], "Body 3"),
+    ]
+    _recenter_bodies(bodies)
+    return bodies
+
+
+def create_three_body_chaotic():
+    """Alias for the classic Pythagorean chaotic configuration."""
+    return create_three_body()
+
+
+def create_three_body_ejection():
+    """Tight binary plus low-mass interloper that typically gains energy and escapes."""
+    bodies = [
+        Body(5.0, [-1.0, 0.0, 0.0], [0.0, -0.55, 0.05], "Body 1"),
+        Body(5.0, [1.0, 0.0, 0.0], [0.0, 0.55, -0.05], "Body 2"),
+        Body(0.08, [0.0, 3.5, 0.1], [0.25, 0.05, 0.0], "Body 3"),
+    ]
+    _recenter_bodies(bodies)
+    return bodies
 
 
 def create_pluto_system():
@@ -150,6 +220,22 @@ BODY_COLORS = {
 }
 
 SCENARIOS = {
+    "two_body": {
+        "name": "Two-Body Ellipse",
+        "description": "Clean bound orbit of two masses in the COM frame",
+        "factory": create_two_body,
+        "G": 1.0,
+        "dt": 0.01,
+        "softening": 0.005,
+    },
+    "figure_eight": {
+        "name": "Figure-Eight Three-Body",
+        "description": "Equal masses, periodic planar special solution",
+        "factory": create_figure_eight,
+        "G": 1.0,
+        "dt": 0.005,
+        "softening": 0.002,
+    },
     "three_body": {
         "name": "Chaotic Three-Body Problem",
         "description": "Pythagorean 3-4-5 triangle masses in chaotic orbit (3D)",
@@ -157,6 +243,22 @@ SCENARIOS = {
         "G": 1.0,
         # dt=0.001 is physically fine but visually imperceptible at ~120fps.
         "dt": 0.01,
+        "softening": 0.01,
+    },
+    "three_body_chaotic": {
+        "name": "Chaotic Encounter (Pythagorean)",
+        "description": "Same as classic chaotic three-body preset (3D triangle)",
+        "factory": create_three_body_chaotic,
+        "G": 1.0,
+        "dt": 0.01,
+        "softening": 0.01,
+    },
+    "three_body_ejection": {
+        "name": "Ejection / Slingshot",
+        "description": "Heavy binary with a light third body that often escapes",
+        "factory": create_three_body_ejection,
+        "G": 1.0,
+        "dt": 0.008,
         "softening": 0.01,
     },
     "pluto_system": {

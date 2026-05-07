@@ -65,7 +65,14 @@ SIMULATION_REGISTRY: Dict[str, Dict[str, Any]] = {
         "module": "simulations.ethan.app",
         "icon": "🪐",
         "tags": ["physics", "CPU", "small-N", "3-body", "Pluto"],
-        "scenarios": ["three_body", "pluto_system"],
+        "scenarios": [
+            "two_body",
+            "figure_eight",
+            "three_body",
+            "three_body_chaotic",
+            "three_body_ejection",
+            "pluto_system",
+        ],
     },
     "jaspersim": {
         "id": "jaspersim",
