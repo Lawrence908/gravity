@@ -62,7 +62,8 @@ def create_three_body(positions=None, velocities=None, masses=None):
     """
     n = 3
     masses = masses or [3.0, 4.0, 5.0]
-    positions = positions or [[1.0, 3.0, 0.0], [-2.0, -1.0, 0.0], [1.0, -1.0, 0.0]]
+    # Small out-of-plane offsets so the 3D viewer shows depth immediately.
+    positions = positions or [[1.0, 3.0, 0.20], [-2.0, -1.0, -0.15], [1.0, -1.0, 0.00]]
     velocities = velocities or [[0.0, 0.0, 0.0]] * n
 
     positions = [_coerce_vector(p, 3) for p in positions]
@@ -136,7 +137,8 @@ SCENARIOS = {
         "description": "Pythagorean 3-4-5 triangle masses in chaotic orbit (3D)",
         "factory": create_three_body,
         "G": 1.0,
-        "dt": 0.001,
+        # dt=0.001 is physically fine but visually imperceptible at ~120fps.
+        "dt": 0.01,
         "softening": 0.01,
     },
     "pluto_system": {
@@ -241,9 +243,67 @@ class SmallNSimulator:
         mass = float(data.get("mass", 1.0))
         name = data.get("name", f"Body {len(self.bodies) + 1}")
         self.bodies.append(Body(mass, pos, vel, name))
-        self._accelerations.append(
-            _gravitational_acceleration(self.bodies[-1], self.bodies, self.G, self.softening)
-        )
+        self._recompute_accelerations()
+
+    def update_body(self, data: dict):
+        if not self.bodies:
+            return
+        idx = int(data.get("index", -1))
+        if idx < 0 or idx >= len(self.bodies):
+            return
+        dim = len(self.bodies[0].position)
+        b = self.bodies[idx]
+        if "pos" in data:
+            b.position = np.array(_coerce_vector(data.get("pos"), dim), dtype=float)
+        if "vel" in data:
+            b.velocity = np.array(_coerce_vector(data.get("vel"), dim), dtype=float)
+        if "mass" in data and data.get("mass") is not None:
+            b.mass = float(data.get("mass"))
+        if "name" in data and data.get("name") is not None:
+            b.name = str(data.get("name"))
+        self._recompute_accelerations()
+
+    def remove_body(self, data: dict):
+        if not self.bodies:
+            return
+        idx = int(data.get("index", -1))
+        if idx < 0 or idx >= len(self.bodies):
+            return
+        self.bodies.pop(idx)
+        self._recompute_accelerations()
+
+    def randomize_bodies(self, data: dict | None = None):
+        """Randomize mass/pos/vel for all bodies and recenter to COM."""
+        if not self.bodies:
+            return
+        data = data or {}
+        dim = len(self.bodies[0].position)
+
+        pos_scale = float(data.get("pos_scale", 3.0))
+        vel_scale = float(data.get("vel_scale", 1.0))
+        m_min = float(data.get("m_min", 0.5))
+        m_max = float(data.get("m_max", 5.0))
+
+        rng = np.random.default_rng()
+        for b in self.bodies:
+            b.mass = float(rng.uniform(m_min, m_max))
+            b.position = rng.uniform(-pos_scale, pos_scale, size=(dim,)).astype(float)
+            b.velocity = rng.uniform(-vel_scale, vel_scale, size=(dim,)).astype(float)
+
+        total_mass = sum(b.mass for b in self.bodies) or 1.0
+        com_pos = sum(b.mass * b.position for b in self.bodies) / total_mass
+        com_vel = sum(b.mass * b.velocity for b in self.bodies) / total_mass
+        for b in self.bodies:
+            b.position = b.position - com_pos
+            b.velocity = b.velocity - com_vel
+
+        self._recompute_accelerations()
+
+    def _recompute_accelerations(self):
+        self._accelerations = [
+            _gravitational_acceleration(b, self.bodies, self.G, self.softening)
+            for b in self.bodies
+        ]
 
 
 # ============================================================================
@@ -258,6 +318,7 @@ class AsyncSimulator:
         self.state_queue: Queue = Queue(maxsize=2)
         self.command_queue: Queue = Queue()
         self.running = True
+        self.paused = False
         self.physics_fps = fps
         self.sim_lock = threading.Lock()
         self._shutdown_event = threading.Event()
@@ -283,10 +344,12 @@ class AsyncSimulator:
                 pass
 
             with self.sim_lock:
-                self.sim.step()
+                if not self.paused:
+                    self.sim.step()
                 state = self.sim.get_state()
 
             state["reset_occurred"] = reset_occurred
+            state["paused"] = self.paused
 
             try:
                 self.state_queue.put_nowait(state)
@@ -311,6 +374,18 @@ class AsyncSimulator:
             elif cmd_type == "add_body":
                 self.sim.add_body(data)
                 return False
+            elif cmd_type == "update_body":
+                self.sim.update_body(data)
+                return False
+            elif cmd_type == "remove_body":
+                self.sim.remove_body(data)
+                return False
+            elif cmd_type == "randomize_bodies":
+                self.sim.randomize_bodies(data)
+                return False
+            elif cmd_type == "set_paused":
+                self.paused = bool(data.get("paused", False))
+                return False
             elif cmd_type == "reset":
                 scenario = data.get("scenario", self.sim.scenario_id)
                 self.sim.reset(scenario=scenario)
@@ -319,6 +394,8 @@ class AsyncSimulator:
                         self.state_queue.get_nowait()
                     except Empty:
                         break
+                if data.get("paused") is not None:
+                    self.paused = bool(data.get("paused"))
                 return True
             else:
                 print(f"[EthanSim] Unknown command: {cmd_type}")

@@ -119,10 +119,18 @@
     /* Body list */
     #bodyList { max-height: 200px; overflow-y: auto; font-size: 12px; margin: 6px 0; }
     #bodyList .body-item {
-      display: flex; align-items: center; gap: 6px; padding: 3px 0;
+      display: flex; align-items: center; gap: 8px; padding: 8px 8px;
       border-bottom: 1px solid rgba(255,255,255,0.04);
+      cursor: pointer;
+      border-radius: 10px;
+    }
+    #bodyList .body-item:hover { background: rgba(255,255,255,0.06); }
+    #bodyList .body-item.selected {
+      background: rgba(110, 168, 255, 0.12);
+      outline: 1px solid rgba(110, 168, 255, 0.25);
     }
     #bodyList .body-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    #bodyList .body-idx { color: var(--text-muted); font-family: monospace; font-size: 11px; width: 2.5em; flex: 0 0 auto; }
     #bodyList .body-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #bodyList .body-mass { color: var(--text-muted); font-family: monospace; font-size: 11px; }
 
@@ -234,6 +242,7 @@
                 <button type="button" id="btnConnect" class="primary">Connect</button>
                 <button type="button" id="btnDisconnect" class="danger" style="display:none;">Disconnect</button>
                 <button type="button" id="btnReset">Reset</button>
+                <button type="button" id="btnPlayPause">Pause</button>
               </div>
               <p id="wsStatus" class="hint">Disconnected</p>
             </section>
@@ -242,18 +251,29 @@
 
             <section>
               <h3>Bodies</h3>
+              <p class="hint">Click a body to select it for editing.</p>
+              <div class="row-inline" style="margin: 6px 0 4px 0;">
+                <button type="button" id="btnRandomize">Randomize</button>
+                <span id="selectedLabel" class="hint" style="margin: 0;">Selected: —</span>
+              </div>
               <div id="bodyList"></div>
             </section>
 
             <hr class="divider">
 
             <section>
-              <h3>Add Body</h3>
+              <h3>Add / Edit Body</h3>
               <label>Position (x, y, z)</label>
               <div class="row-inline">
                 <input type="number" id="addPosX" value="3" step="0.1" style="width:30%">
                 <input type="number" id="addPosY" value="0" step="0.1" style="width:30%">
                 <input type="number" id="addPosZ" value="0" step="0.1" style="width:30%">
+              </div>
+              <label>Velocity (vx, vy, vz)</label>
+              <div class="row-inline">
+                <input type="number" id="addVelX" value="0" step="0.1" style="width:30%">
+                <input type="number" id="addVelY" value="0" step="0.1" style="width:30%">
+                <input type="number" id="addVelZ" value="0" step="0.1" style="width:30%">
               </div>
               <label>Mass</label>
               <input type="number" id="addMass" value="0.001" step="0.0001" min="0">
@@ -262,6 +282,8 @@
               <div class="row-inline" style="margin-top: 4px;">
                 <button type="button" id="btnCalcVel">Calc orbit vel</button>
                 <button type="button" id="btnAddBody" class="primary">Add</button>
+                <button type="button" id="btnUpdateBody">Update</button>
+                <button type="button" id="btnRemoveBody" class="danger">Remove</button>
               </div>
               <p id="calcVelResult" class="hint"></p>
             </section>
@@ -375,6 +397,7 @@
     let latestState = null;
     let rtTrailHistory = {};  // bodyIndex → [{pos, step}]
     let rtStepCount = 0;
+    let selectedBodyIndex = null;
     let useMsgpack = false;
     let msgpackLib = null;
 
@@ -733,6 +756,7 @@
       const positions = bodies.positions;
       const n = positions.length;
       const is2D = n > 0 && positions[0].length === 2;
+      const paused = !!state.paused;
 
       // Ensure we have enough meshes
       while (bodyMeshes.length < n) {
@@ -788,16 +812,25 @@
       // Body list
       const listEl = document.getElementById('bodyList');
       if (listEl && bodies.names) {
-        let html = '';
+        listEl.innerHTML = '';
         for (let i = 0; i < n; i++) {
           const c = bodies.colors && bodies.colors[i] ? bodies.colors[i] : [0,0,70];
           const color = `hsl(${c[0]},${c[1]}%,${c[2]}%)`;
           const name = bodies.names[i] || `Body ${i}`;
           const mass = bodies.masses ? bodies.masses[i] : '?';
           const massStr = typeof mass === 'number' ? (mass < 0.01 ? mass.toExponential(2) : mass.toPrecision(4)) : mass;
-          html += `<div class="body-item"><span class="body-dot" style="background:${color}"></span><span class="body-name">${name}</span><span class="body-mass">${massStr}</span></div>`;
+
+          const item = document.createElement('div');
+          item.className = 'body-item' + (selectedBodyIndex === i ? ' selected' : '');
+          item.dataset.index = String(i);
+          item.innerHTML =
+            `<span class="body-dot" style="background:${color}"></span>` +
+            `<span class="body-idx">#${i}</span>` +
+            `<span class="body-name">${name}</span>` +
+            `<span class="body-mass">${massStr}</span>`;
+          item.onclick = () => selectBody(i);
+          listEl.appendChild(item);
         }
-        listEl.innerHTML = html;
       }
 
       // Performance HUD
@@ -810,8 +843,39 @@
         document.getElementById('hudDrift').textContent = perf.energy_drift_pct != null ? perf.energy_drift_pct.toFixed(4) + '%' : '—';
       }
 
+      // Play/pause button label
+      const pp = document.getElementById('btnPlayPause');
+      if (pp) pp.textContent = paused ? 'Play' : 'Pause';
+
       // Step info
-      document.getElementById('stepInfo').textContent = `Real-time — ${n} bodies  |  dt=${state.params?.dt ?? '?'}`;
+      document.getElementById('stepInfo').textContent = `Real-time — ${n} bodies  |  dt=${state.params?.dt ?? '?'}  |  ${paused ? 'paused' : 'running'}`;
+    }
+
+    function setVecInputs(prefix, vec) {
+      document.getElementById(prefix + 'X').value = (vec?.[0] ?? 0);
+      document.getElementById(prefix + 'Y').value = (vec?.[1] ?? 0);
+      document.getElementById(prefix + 'Z').value = (vec?.[2] ?? 0);
+    }
+
+    function readVecInputs(prefix) {
+      return [
+        parseFloat(document.getElementById(prefix + 'X').value) || 0,
+        parseFloat(document.getElementById(prefix + 'Y').value) || 0,
+        parseFloat(document.getElementById(prefix + 'Z').value) || 0,
+      ];
+    }
+
+    function selectBody(i) {
+      selectedBodyIndex = i;
+      if (!latestState || !latestState.bodies) return;
+      const b = latestState.bodies;
+      setVecInputs('addPos', b.positions?.[i] ?? [0,0,0]);
+      setVecInputs('addVel', b.velocities?.[i] ?? [0,0,0]);
+      document.getElementById('addMass').value = (b.masses?.[i] ?? 0.001);
+      document.getElementById('addName').value = (b.names?.[i] ?? '');
+      const label = document.getElementById('selectedLabel');
+      if (label) label.textContent = `Selected: #${i} ${b.names?.[i] ?? ''}`;
+      applyRealtimeState(latestState); // refresh highlight
     }
 
     async function connectWs() {
@@ -1118,26 +1182,39 @@
     document.getElementById('btnConnect').onclick = connectWs;
     document.getElementById('btnDisconnect').onclick = disconnectWs;
     document.getElementById('btnReset').onclick = () => sendWsMessage({ type: 'reset', data: {} });
+    document.getElementById('btnPlayPause').onclick = () => {
+      const paused = !!(latestState && latestState.paused);
+      sendWsMessage({ type: 'set_paused', data: { paused: !paused } });
+    };
+    document.getElementById('btnRandomize').onclick = () => {
+      sendWsMessage({ type: 'randomize_bodies', data: {} });
+    };
     document.getElementById('btnUpdateParams').onclick = () => {
       const dt = parseFloat(document.getElementById('paramDt').value);
       if (!isNaN(dt)) sendWsMessage({ type: 'update_params', data: { dt } });
     };
     document.getElementById('btnAddBody').onclick = () => {
-      const pos = [
-        parseFloat(document.getElementById('addPosX').value) || 0,
-        parseFloat(document.getElementById('addPosY').value) || 0,
-        parseFloat(document.getElementById('addPosZ').value) || 0,
-      ];
+      const pos = readVecInputs('addPos');
+      const vel = readVecInputs('addVel');
       const mass = parseFloat(document.getElementById('addMass').value) || 0.001;
       const name = document.getElementById('addName').value || undefined;
-      sendWsMessage({ type: 'add_body', data: { pos, vel: [0, 0, 0], mass, name, radius: 0.05, color: [180, 60, 70] } });
+      sendWsMessage({ type: 'add_body', data: { pos, vel, mass, name, radius: 0.05, color: [180, 60, 70] } });
+    };
+    document.getElementById('btnUpdateBody').onclick = () => {
+      if (selectedBodyIndex == null) return;
+      const pos = readVecInputs('addPos');
+      const vel = readVecInputs('addVel');
+      const mass = parseFloat(document.getElementById('addMass').value);
+      const name = document.getElementById('addName').value || undefined;
+      sendWsMessage({ type: 'update_body', data: { index: selectedBodyIndex, pos, vel, mass, name } });
+    };
+    document.getElementById('btnRemoveBody').onclick = () => {
+      if (selectedBodyIndex == null) return;
+      sendWsMessage({ type: 'remove_body', data: { index: selectedBodyIndex } });
+      selectedBodyIndex = null;
     };
     document.getElementById('btnCalcVel').onclick = () => {
-      const pos = [
-        parseFloat(document.getElementById('addPosX').value) || 0,
-        parseFloat(document.getElementById('addPosY').value) || 0,
-        parseFloat(document.getElementById('addPosZ').value) || 0,
-      ];
+      const pos = readVecInputs('addPos');
       const mass = parseFloat(document.getElementById('addMass').value) || 0.001;
       sendWsMessage({ type: 'compute_velocity', data: { position: pos, mass, requestId: 'ui' } });
     };
