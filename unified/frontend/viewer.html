@@ -388,6 +388,7 @@
     let particleInstances = null; // InstancedMesh for replay mode
     let starMesh = null;
     let trailLineMesh = null;
+    let ghostTrailLineMesh = null;
     let trailHistory = null;
     let lastTrailFrameIndex = -1;
 
@@ -396,6 +397,7 @@
     let wsConnected = false;
     let latestState = null;
     let rtTrailHistory = {};  // bodyIndex → [{pos, step}]
+    let rtGhostTrailHistory = {};
     let rtStepCount = 0;
     let selectedBodyIndex = null;
     let useMsgpack = false;
@@ -463,7 +465,9 @@
       return [p[0], p[2] ?? 0, p[1]];
     }
 
-    // ======================================================================
+
+
+    // =+
     // TRAIL SYSTEM (shared)
     // ======================================================================
     function createTrailMaterial() {
@@ -486,6 +490,8 @@
       });
     }
 
+
+
     function buildTrailGeometry(nParticles) {
       const maxSegments = nParticles * (TRAIL_MAX_POINTS - 1);
       const vertexCount = maxSegments * 2;
@@ -498,10 +504,10 @@
       return geo;
     }
 
-    function updateTrailMesh(history, is2D, nParticles) {
-      if (!trailLineMesh || !history) return;
-      const posAttr = trailLineMesh.geometry.getAttribute('position');
-      const alphaAttr = trailLineMesh.geometry.getAttribute('alpha');
+    function updateTrailMesh(lineMesh, history, is2D, nParticles) {
+      if (!lineMesh || !history) return;
+      const posAttr = lineMesh.geometry.getAttribute('position');
+      const alphaAttr = lineMesh.geometry.getAttribute('alpha');
       let segmentCount = 0;
       for (let i = 0; i < nParticles; i++) {
         const trail = history[i];
@@ -526,7 +532,7 @@
       }
       posAttr.needsUpdate = true;
       alphaAttr.needsUpdate = true;
-      trailLineMesh.geometry.setDrawRange(0, segmentCount * 2);
+      lineMesh.geometry.setDrawRange(0, segmentCount * 2);
     }
 
     function ensureTrailMesh(nParticles) {
@@ -540,6 +546,27 @@
       scene.add(trailLineMesh);
     }
 
+    function ensureGhostTrailMesh(nParticles) {
+      if (ghostTrailLineMesh) {
+        scene.remove(ghostTrailLineMesh);
+        ghostTrailLineMesh.geometry.dispose();
+        ghostTrailLineMesh.material.dispose();
+      }
+      ghostTrailLineMesh = new THREE.LineSegments(buildTrailGeometry(nParticles), createTrailMaterial());
+      ghostTrailLineMesh.frustumCulled = false;
+      scene.add(ghostTrailLineMesh);
+    }
+
+    function disposeGhostTrailMesh() {
+      if (ghostTrailLineMesh) {
+        scene.remove(ghostTrailLineMesh);
+        ghostTrailLineMesh.geometry.dispose();
+        ghostTrailLineMesh.material.dispose();
+        ghostTrailLineMesh = null;
+      }
+      rtGhostTrailHistory = {};
+    }
+
     // ======================================================================
     // CLEAR SCENE (remove all sim objects)
     // ======================================================================
@@ -549,6 +576,7 @@
       bodyMeshes.forEach(m => { scene.remove(m); m.geometry.dispose(); m.material.dispose(); });
       bodyMeshes = [];
       if (trailLineMesh) { scene.remove(trailLineMesh); trailLineMesh.geometry.dispose(); trailLineMesh.material.dispose(); trailLineMesh = null; }
+      disposeGhostTrailMesh();
       trailHistory = null;
       lastTrailFrameIndex = -1;
       rtTrailHistory = {};
@@ -687,7 +715,7 @@
           while (trailHistory[i].length > TRAIL_MAX_POINTS) trailHistory[i].shift();
         }
         lastTrailFrameIndex = frameIndex;
-        updateTrailMesh(trailHistory, is2D, n);
+        updateTrailMesh(trailLineMesh, trailHistory, is2D, n);
       }
 
       if (particleInstances) {
@@ -750,13 +778,20 @@
       return (Math.round(f(0) * 255) << 16) | (Math.round(f(8) * 255) << 8) | Math.round(f(4) * 255);
     }
 
-    function applyRealtimeState(state) {
+
+    function applyRealtimeState(state, opts = {}) {
       if (!state || !state.bodies) return;
+      const advanceTrails = opts.advanceTrails !== false;
       const bodies = state.bodies;
       const positions = bodies.positions;
       const n = positions.length;
       const is2D = n > 0 && positions[0].length === 2;
       const paused = !!state.paused;
+
+      const ghostBodiesRaw = state.ghost_bodies;
+      const ghostN0 = ghostBodiesRaw && ghostBodiesRaw.positions ? ghostBodiesRaw.positions.length : 0;
+      let drawPos = positions;
+      let drawGhostPos = ghostBodiesRaw && ghostN0 === n ? ghostBodiesRaw.positions : null;
 
       // Ensure we have enough meshes
       while (bodyMeshes.length < n) {
@@ -785,12 +820,15 @@
       }
 
       // Trail history for real-time
-      rtStepCount++;
-      for (let i = 0; i < n; i++) {
-        if (!rtTrailHistory[i]) rtTrailHistory[i] = [];
-        const p = simToThree(positions[i], is2D);
-        rtTrailHistory[i].push({ pos: p, step: rtStepCount });
-        while (rtTrailHistory[i].length > TRAIL_MAX_POINTS) rtTrailHistory[i].shift();
+      if (advanceTrails) {
+        rtStepCount++;
+        {
+          for (let i = 0; i < n; i++) {
+            if (!rtTrailHistory[i]) rtTrailHistory[i] = [];
+            const p = simToThree(positions[i], is2D);
+            rtTrailHistory[i].push({ pos: p, step: rtStepCount });
+            while (rtTrailHistory[i].length > TRAIL_MAX_POINTS) rtTrailHistory[i].shift();
+          }
       }
 
       // Rebuild trail mesh if body count changed
@@ -800,7 +838,27 @@
       }
       const trailArr = [];
       for (let i = 0; i < n; i++) trailArr.push(rtTrailHistory[i] || []);
-      updateTrailMesh(trailArr, is2D, n);
+      updateTrailMesh(trailLineMesh, trailArr, is2D, n);
+
+      if (drawGhostPos) {
+        if (advanceTrails) {
+          for (let i = 0; i < n; i++) {
+              if (!rtGhostTrailHistory[i]) rtGhostTrailHistory[i] = [];
+              const p = simToThree(drawGhostPos[i], is2D);
+              rtGhostTrailHistory[i].push({ pos: p, step: rtStepCount });
+              while (rtGhostTrailHistory[i].length > TRAIL_MAX_POINTS) rtGhostTrailHistory[i].shift();
+            }
+        }
+        if (!ghostTrailLineMesh || ghostTrailLineMesh._nBodies !== n) {
+          ensureGhostTrailMesh(n);
+          ghostTrailLineMesh._nBodies = n;
+        }
+        const ghostTrailArr = [];
+        for (let i = 0; i < n; i++) ghostTrailArr.push(rtGhostTrailHistory[i] || []);
+        updateTrailMesh(ghostTrailLineMesh, ghostTrailArr, is2D, n);
+      } else {
+        disposeGhostTrailMesh();
+      }
 
       // Lock on first body
       if (viewLockedOn && bodyMeshes.length > 0) {
@@ -875,7 +933,7 @@
       document.getElementById('addName').value = (b.names?.[i] ?? '');
       const label = document.getElementById('selectedLabel');
       if (label) label.textContent = `Selected: #${i} ${b.names?.[i] ?? ''}`;
-      applyRealtimeState(latestState); // refresh highlight
+      applyRealtimeState(latestState, { advanceTrails: false }); // refresh highlight
     }
 
     async function connectWs() {
@@ -886,6 +944,7 @@
       disconnectWs();
       clearSimObjects();
       rtTrailHistory = {};
+      rtGhostTrailHistory = {};
       rtStepCount = 0;
 
       const statusEl = document.getElementById('wsStatus');
@@ -950,6 +1009,7 @@
         }
         if (state.type === 'init') {
           rtTrailHistory = {};
+          rtGhostTrailHistory = {};
           rtStepCount = 0;
         }
 
@@ -1037,7 +1097,7 @@
         playRow.style.display = '';
         document.getElementById('perfHud').style.display = 'none';
         disconnectWs();
-      } else {
+        } else {
         indicator.className = 'realtime';
         indicator.textContent = 'Real-Time';
         replayPanel.style.display = 'none';
@@ -1074,9 +1134,9 @@
         }
       };
       document.getElementById('viewGrid').onclick = () => { if (gridHelper) gridHelper.visible = !gridHelper.visible; };
-    }
 
-    // ======================================================================
+
+    // =+
     // PLAYBACK CONTROLS (replay mode)
     // ======================================================================
     function setupPlaybackControls() {
@@ -1145,6 +1205,8 @@
     setupPlaybackControls();
     setupSidebar();
 
+
+
     // Trail opacity
     document.getElementById('trailOpacity').oninput = function() {
       const v = parseInt(this.value, 10);
@@ -1157,6 +1219,7 @@
     // Mode buttons
     document.getElementById('btnModeReplay').onclick = () => setMode('replay');
     document.getElementById('btnModeRealtime').onclick = () => setMode('realtime');
+
 
     // Replay controls
     document.getElementById('replayLoad').onclick = () => {

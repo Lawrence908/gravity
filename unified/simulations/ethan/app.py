@@ -41,6 +41,23 @@ def _gravitational_acceleration(body, bodies, G, softening=0.0):
     return acceleration
 
 
+def _velocity_verlet_step(bodies: list[Body], accelerations: list[np.ndarray], dt: float, G: float, softening: float) -> list[np.ndarray]:
+    """One Velocity-Verlet step; mutates ``bodies`` and returns the new acceleration list."""
+    for i, body in enumerate(bodies):
+        body.position = body.position + body.velocity * dt + 0.5 * accelerations[i] * dt**2
+
+    new_acc = [_gravitational_acceleration(b, bodies, G, softening) for b in bodies]
+    for i, body in enumerate(bodies):
+        body.velocity = body.velocity + 0.5 * (accelerations[i] + new_acc[i]) * dt
+    return new_acc
+
+
+# Scenarios where we run a second copy with a tiny IC change (chaos / sensitivity demo).
+_GHOST_TWIN_SCENARIO_IDS = frozenset({"three_body"})
+# Relative change applied to one body's velocity in the ghost copy (0.1%).
+_GHOST_VELOCITY_PERTURBATION = 1.001
+
+
 # ============================================================================
 # SCENARIO FACTORIES
 # ============================================================================
@@ -76,6 +93,7 @@ def create_three_body(positions=None, velocities=None, masses=None):
     velocities = [(np.array(v) - com_vel).tolist() for v in velocities]
 
     return [Body(masses[i], positions[i], velocities[i], f"Body {i+1}") for i in range(n)]
+
 
 
 def create_pluto_system():
@@ -174,22 +192,42 @@ class SmallNSimulator:
             _gravitational_acceleration(b, self.bodies, self.G, self.softening)
             for b in self.bodies
         ]
+        self._ghost_bodies: list[Body] | None = None
+        self._ghost_accelerations: list[np.ndarray] | None = None
+        self._init_ghost_twin()
+
+
+    def _ghost_twin_active(self) -> bool:
+        return self.scenario_id in _GHOST_TWIN_SCENARIO_IDS and len(self.bodies) == 3
+
+    def _init_ghost_twin(self) -> None:
+        """Clone the main system and nudge one body's velocity by 0.1% for a chaos demo."""
+        if not self._ghost_twin_active():
+            self._ghost_bodies = None
+            self._ghost_accelerations = None
+            return
+        self._ghost_bodies = [
+            Body(b.mass, np.array(b.position, copy=True), np.array(b.velocity, copy=True), b.name)
+            for b in self.bodies
+        ]
+        self._ghost_bodies[0].velocity = self._ghost_bodies[0].velocity * _GHOST_VELOCITY_PERTURBATION
+        self._ghost_accelerations = [
+            _gravitational_acceleration(b, self._ghost_bodies, self.G, self.softening)
+            for b in self._ghost_bodies
+        ]
 
     def step(self):
         t0 = time.perf_counter()
         dt = self.dt
 
-        for i, body in enumerate(self.bodies):
-            body.position += body.velocity * dt + 0.5 * self._accelerations[i] * dt ** 2
+        self._accelerations = _velocity_verlet_step(
+            self.bodies, self._accelerations, dt, self.G, self.softening
+        )
+        if self._ghost_bodies is not None and self._ghost_accelerations is not None:
+            self._ghost_accelerations = _velocity_verlet_step(
+                self._ghost_bodies, self._ghost_accelerations, dt, self.G, self.softening
+            )
 
-        new_acc = [
-            _gravitational_acceleration(b, self.bodies, self.G, self.softening)
-            for b in self.bodies
-        ]
-        for i, body in enumerate(self.bodies):
-            body.velocity += 0.5 * (self._accelerations[i] + new_acc[i]) * dt
-
-        self._accelerations = new_acc
         self.step_count += 1
 
         elapsed = time.perf_counter() - t0
@@ -198,12 +236,10 @@ class SmallNSimulator:
         if len(self.frame_times) > 120:
             self.frame_times.pop(0)
 
-    def get_state(self) -> dict:
-        avg_time = sum(self.frame_times) / len(self.frame_times) if self.frame_times else 0.0
-        max_mass = max(b.mass for b in self.bodies) if self.bodies else 1.0
-
+    def _serialize_bodies(self, bodies: list[Body]) -> dict:
+        max_mass = max(b.mass for b in bodies) if bodies else 1.0
         positions, velocities, masses, radii, colors, names = [], [], [], [], [], []
-        for b in self.bodies:
+        for i, b in enumerate(bodies):
             positions.append(b.position.tolist())
             velocities.append(b.velocity.tolist())
             masses.append(b.mass)
@@ -211,16 +247,21 @@ class SmallNSimulator:
             radii.append(max(0.03, r))
             colors.append(BODY_COLORS.get(b.name, [0, 0, 70]))
             names.append(b.name)
+        out: dict = {
+            "positions": positions,
+            "velocities": velocities,
+            "masses": masses,
+            "radii": radii,
+            "colors": colors,
+            "names": names,
+        }
+        return out
 
-        return {
-            "bodies": {
-                "positions": positions,
-                "velocities": velocities,
-                "masses": masses,
-                "radii": radii,
-                "colors": colors,
-                "names": names,
-            },
+    def get_state(self) -> dict:
+        avg_time = sum(self.frame_times) / len(self.frame_times) if self.frame_times else 0.0
+
+        out: dict = {
+            "bodies": self._serialize_bodies(self.bodies),
             "params": {
                 "G": self.G,
                 "dt": self.dt,
@@ -232,6 +273,13 @@ class SmallNSimulator:
                 "body_count": len(self.bodies),
             },
         }
+        if self._ghost_bodies is not None:
+            out["ghost_bodies"] = self._serialize_bodies(self._ghost_bodies)
+            out["params"]["ghost_twin"] = True
+            out["params"]["ghost_velocity_scale"] = _GHOST_VELOCITY_PERTURBATION
+        else:
+            out["params"]["ghost_twin"] = False
+        return out
 
     def reset(self, scenario=None):
         self.__init__(scenario=scenario or self.scenario_id)
@@ -304,6 +352,7 @@ class SmallNSimulator:
             _gravitational_acceleration(b, self.bodies, self.G, self.softening)
             for b in self.bodies
         ]
+        self._init_ghost_twin()
 
 
 # ============================================================================
