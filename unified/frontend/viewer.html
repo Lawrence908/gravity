@@ -348,7 +348,13 @@
         </div>
       </div>
       <div class="controls-right">
-        <span style="color: var(--text-muted);">Trails</span>
+        <label for="trailModeSelect" style="color: var(--text-muted);">Trails</label>
+        <select id="trailModeSelect" title="Trail style" style="min-width: 6.5em;">
+          <option value="off">Off</option>
+          <option value="fade" selected>Fading</option>
+          <option value="full">Full</option>
+        </select>
+        <span style="color: var(--text-muted);">Opacity</span>
         <input type="range" id="trailOpacity" min="0" max="100" value="10" title="Trail opacity">
         <label for="trailOpacity" id="trailOpacityLabel" style="min-width: 2.5em;">10%</label>
       </div>
@@ -405,7 +411,13 @@
     let msgpackLib = null;
 
     const TRAIL_SIM_SECONDS = 2.0;
-    const TRAIL_MAX_POINTS = 500;
+    /** Geometry buffer: max trail vertices per body (must cover "full" mode). */
+    const TRAIL_BUFFER_MAX_POINTS = 2200;
+    /** Fading mode: cap stored samples per body. */
+    const TRAIL_FADE_MAX_POINTS = 500;
+
+    /** off | fade | full — affects replay and real-time trails. */
+    let trailDisplayMode = 'fade';
     const BASE_STAR_RADIUS = 0.15;
     const MIN_PARTICLE_RADIUS = 0.02;
 
@@ -512,10 +524,10 @@
     // ======================================================================
     // TRAIL SYSTEM (shared)
     // ======================================================================
-    function createTrailMaterial() {
+    function createTrailMaterial(baseOpacity = 0.1) {
       return new THREE.ShaderMaterial({
         transparent: true, depthWrite: false,
-        uniforms: { uTrailOpacity: { value: 0.1 } },
+        uniforms: { uTrailOpacity: { value: baseOpacity } },
         vertexShader: `
           attribute float alpha;
           varying float vAlpha;
@@ -532,10 +544,26 @@
       });
     }
 
+    function getTrailLimitsReplay(dt) {
+      if (trailDisplayMode === 'off') return null;
+      const maxPoints = trailDisplayMode === 'full' ? 2000 : TRAIL_FADE_MAX_POINTS;
+      const stepWindow =
+        trailDisplayMode === 'full'
+          ? Infinity
+          : Math.min(maxPoints, Math.max(20, Math.round(TRAIL_SIM_SECONDS / dt)));
+      return { maxPoints, stepWindow };
+    }
 
+    /** Real-time trails use integer ``rtStepCount`` as step index (~frame count). */
+    function getTrailLimitsRT() {
+      if (trailDisplayMode === 'off') return null;
+      const maxPoints = trailDisplayMode === 'full' ? 2000 : TRAIL_FADE_MAX_POINTS;
+      const stepWindow = trailDisplayMode === 'full' ? null : Math.round(TRAIL_SIM_SECONDS * 120);
+      return { maxPoints, stepWindow };
+    }
 
     function buildTrailGeometry(nParticles) {
-      const maxSegments = nParticles * (TRAIL_MAX_POINTS - 1);
+      const maxSegments = nParticles * (TRAIL_BUFFER_MAX_POINTS - 1);
       const vertexCount = maxSegments * 2;
       const positions = new Float32Array(vertexCount * 3);
       const alphas = new Float32Array(vertexCount);
@@ -579,7 +607,7 @@
 
     function ensureTrailMesh(nParticles) {
       if (trailLineMesh) { scene.remove(trailLineMesh); trailLineMesh.geometry.dispose(); trailLineMesh.material.dispose(); }
-      trailLineMesh = new THREE.LineSegments(buildTrailGeometry(nParticles), createTrailMaterial());
+      trailLineMesh = new THREE.LineSegments(buildTrailGeometry(nParticles), createTrailMaterial(0.1));
       trailLineMesh.frustumCulled = false;
       const opEl = document.getElementById('trailOpacity');
       if (opEl && trailLineMesh.material.uniforms) {
@@ -594,7 +622,7 @@
         ghostTrailLineMesh.geometry.dispose();
         ghostTrailLineMesh.material.dispose();
       }
-      ghostTrailLineMesh = new THREE.LineSegments(buildTrailGeometry(nParticles), createTrailMaterial());
+      ghostTrailLineMesh = new THREE.LineSegments(buildTrailGeometry(nParticles), createTrailMaterial(0.035));
       ghostTrailLineMesh.frustumCulled = false;
       scene.add(ghostTrailLineMesh);
     }
@@ -736,9 +764,14 @@
       const stepsArr = replayData.steps;
       const currentStep = stepsArr ? stepsArr[frameIndex] : frameIndex * 100;
       const dt = replayData.dt || 0.01;
-      const trailSimSteps = Math.min(TRAIL_MAX_POINTS, Math.max(20, Math.round(TRAIL_SIM_SECONDS / dt)));
+      const lim = getTrailLimitsReplay(dt);
 
-      if (trailHistory && n > 0 && n <= trailHistory.length) {
+      if (trailDisplayMode === 'off' && trailHistory && n > 0 && n <= trailHistory.length) {
+        for (let i = 0; i < n; i++) trailHistory[i] = [];
+        lastTrailFrameIndex = frameIndex;
+        updateTrailMesh(trailLineMesh, trailHistory, is2D, n);
+      } else if (lim && trailHistory && n > 0 && n <= trailHistory.length) {
+        const trailSimSteps = lim.stepWindow;
         const isRewinding = lastTrailFrameIndex !== undefined && frameIndex < lastTrailFrameIndex;
         if (isRewinding) {
           for (let i = 0; i < n; i++) trailHistory[i] = trailHistory[i].filter(e => e.step <= currentStep);
@@ -753,8 +786,10 @@
           }
         }
         for (let i = 0; i < n; i++) {
-          while (trailHistory[i].length > 0 && trailHistory[i][0].step < currentStep - trailSimSteps) trailHistory[i].shift();
-          while (trailHistory[i].length > TRAIL_MAX_POINTS) trailHistory[i].shift();
+          while (trailHistory[i].length > 0 && Number.isFinite(trailSimSteps) && trailHistory[i][0].step < currentStep - trailSimSteps) {
+            trailHistory[i].shift();
+          }
+          while (trailHistory[i].length > lim.maxPoints) trailHistory[i].shift();
         }
         lastTrailFrameIndex = frameIndex;
         updateTrailMesh(trailLineMesh, trailHistory, is2D, n);
@@ -870,15 +905,24 @@
       }
 
       // Trail history for real-time
+      const limRT = getTrailLimitsRT();
       if (advanceTrails) {
         rtStepCount++;
-        {
+        if (limRT) {
           for (let i = 0; i < n; i++) {
             if (!rtTrailHistory[i]) rtTrailHistory[i] = [];
             const p = simToThree(drawPos[i], is2D);
             rtTrailHistory[i].push({ pos: p, step: rtStepCount });
-            while (rtTrailHistory[i].length > TRAIL_MAX_POINTS) rtTrailHistory[i].shift();
+            while (rtTrailHistory[i].length > limRT.maxPoints) rtTrailHistory[i].shift();
+            if (limRT.stepWindow != null) {
+              while (rtTrailHistory[i].length > 0 && rtTrailHistory[i][0].step < rtStepCount - limRT.stepWindow) {
+                rtTrailHistory[i].shift();
+              }
+            }
           }
+        } else {
+          for (let i = 0; i < n; i++) rtTrailHistory[i] = [];
+        }
       }
 
       // Rebuild trail mesh if body count changed
@@ -892,12 +936,21 @@
 
       if (drawGhostPos) {
         if (advanceTrails) {
-          for (let i = 0; i < n; i++) {
+          if (limRT) {
+            for (let i = 0; i < n; i++) {
               if (!rtGhostTrailHistory[i]) rtGhostTrailHistory[i] = [];
               const p = simToThree(drawGhostPos[i], is2D);
               rtGhostTrailHistory[i].push({ pos: p, step: rtStepCount });
-              while (rtGhostTrailHistory[i].length > TRAIL_MAX_POINTS) rtGhostTrailHistory[i].shift();
+              while (rtGhostTrailHistory[i].length > limRT.maxPoints) rtGhostTrailHistory[i].shift();
+              if (limRT.stepWindow != null) {
+                while (rtGhostTrailHistory[i].length > 0 && rtGhostTrailHistory[i][0].step < rtStepCount - limRT.stepWindow) {
+                  rtGhostTrailHistory[i].shift();
+                }
+              }
             }
+          } else {
+            for (let i = 0; i < n; i++) rtGhostTrailHistory[i] = [];
+          }
         }
         if (!ghostTrailLineMesh || ghostTrailLineMesh._nBodies !== n) {
           ensureGhostTrailMesh(n);
@@ -1273,7 +1326,30 @@
     setupPlaybackControls();
     setupSidebar();
 
+    function syncTrailOpacityControls() {
+      const op = document.getElementById('trailOpacity');
+      if (op) op.disabled = trailDisplayMode === 'off';
+    }
 
+    const trailModeSel = document.getElementById('trailModeSelect');
+    if (trailModeSel) {
+      trailModeSel.value = trailDisplayMode;
+      trailModeSel.onchange = function() {
+        trailDisplayMode = this.value;
+        syncTrailOpacityControls();
+        rtTrailHistory = {};
+        rtGhostTrailHistory = {};
+        rtStepCount = 0;
+        if (mode === 'replay' && replayData && trailHistory) {
+          const idx = parseInt(document.getElementById('timeline').value, 10) || 0;
+          for (let i = 0; i < trailHistory.length; i++) trailHistory[i] = [];
+          lastTrailFrameIndex = -1;
+          updateReplayFrame(idx);
+        }
+        if (latestState) applyRealtimeState(latestState, { advanceTrails: false });
+      };
+    }
+    syncTrailOpacityControls();
 
     // Trail opacity
     document.getElementById('trailOpacity').oninput = function() {
