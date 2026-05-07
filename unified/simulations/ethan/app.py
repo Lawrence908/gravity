@@ -45,12 +45,28 @@ def _gravitational_acceleration(body, bodies, G, softening=0.0):
 # SCENARIO FACTORIES
 # ============================================================================
 
+def _coerce_vector(v, dim: int) -> list[float]:
+    """Coerce an input vector to the requested dimensionality."""
+    arr = np.array(v, dtype=float).reshape(-1)
+    if arr.size < dim:
+        arr = np.pad(arr, (0, dim - arr.size), mode="constant")
+    elif arr.size > dim:
+        arr = arr[:dim]
+    return arr.tolist()
+
+
 def create_three_body(positions=None, velocities=None, masses=None):
-    """Pythagorean 3-body: vertices of a 3-4-5 right triangle, starting at rest."""
+    """Pythagorean 3-body: vertices of a 3-4-5 right triangle, starting at rest.
+
+    Returns a 3D system (x, y, z) with z=0 by default.
+    """
     n = 3
     masses = masses or [3.0, 4.0, 5.0]
-    positions = positions or [[1.0, 3.0], [-2.0, -1.0], [1.0, -1.0]]
-    velocities = velocities or [[0.0, 0.0]] * n
+    positions = positions or [[1.0, 3.0, 0.0], [-2.0, -1.0, 0.0], [1.0, -1.0, 0.0]]
+    velocities = velocities or [[0.0, 0.0, 0.0]] * n
+
+    positions = [_coerce_vector(p, 3) for p in positions]
+    velocities = [_coerce_vector(v, 3) for v in velocities]
 
     total_mass = sum(masses)
     com_pos = sum(m * np.array(p) for m, p in zip(masses, positions)) / total_mass
@@ -117,7 +133,7 @@ BODY_COLORS = {
 SCENARIOS = {
     "three_body": {
         "name": "Chaotic Three-Body Problem",
-        "description": "Pythagorean 3-4-5 triangle masses in chaotic orbit (2D)",
+        "description": "Pythagorean 3-4-5 triangle masses in chaotic orbit (3D)",
         "factory": create_three_body,
         "G": 1.0,
         "dt": 0.001,
@@ -220,8 +236,8 @@ class SmallNSimulator:
 
     def add_body(self, data: dict):
         dim = len(self.bodies[0].position) if self.bodies else 2
-        pos = data.get("pos", [0.0] * dim)
-        vel = data.get("vel", [0.0] * dim)
+        pos = _coerce_vector(data.get("pos", [0.0] * dim), dim)
+        vel = _coerce_vector(data.get("vel", [0.0] * dim), dim)
         mass = float(data.get("mass", 1.0))
         name = data.get("name", f"Body {len(self.bodies) + 1}")
         self.bodies.append(Body(mass, pos, vel, name))
@@ -322,7 +338,8 @@ class AsyncSimulator:
         self.command_queue.put(cmd)
 
     def calculate_velocity(self, position, mass):
-        return [0.0, 0.0]
+        dim = len(self.sim.bodies[0].position) if self.sim.bodies else 3
+        return [0.0] * dim
 
     def stop(self):
         self.running = False
