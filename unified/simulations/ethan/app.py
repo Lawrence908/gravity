@@ -297,7 +297,47 @@ class SmallNSimulator:
         self._ghost_bodies: list[Body] | None = None
         self._ghost_accelerations: list[np.ndarray] | None = None
         self._init_ghost_twin()
+        self._E0 = 0.0
+        self._L0_mag = 0.0
+        self._refresh_conserved_reference()
 
+    def _total_energy(self) -> float:
+        bodies = self.bodies
+        ke = 0.0
+        for b in bodies:
+            v2 = float(np.dot(b.velocity, b.velocity))
+            ke += 0.5 * b.mass * v2
+        pe = 0.0
+        n = len(bodies)
+        eps = self.softening
+        G = self.G
+        for i in range(n):
+            for j in range(i + 1, n):
+                r_vec = bodies[j].position - bodies[i].position
+                dist = math.sqrt(float(np.dot(r_vec, r_vec)) + eps * eps)
+                if dist > 1e-15:
+                    pe -= G * bodies[i].mass * bodies[j].mass / dist
+        return ke + pe
+
+    def _angular_momentum_magnitude(self) -> float:
+        L = np.zeros(3, dtype=float)
+        for b in self.bodies:
+            r = b.position
+            v = b.velocity
+            if len(r) == 2:
+                L[2] += b.mass * float(r[0] * v[1] - r[1] * v[0])
+            else:
+                r3 = np.array([r[0], r[1], float(r[2]) if len(r) > 2 else 0.0], dtype=float)
+                v3 = np.array([v[0], v[1], float(v[2]) if len(v) > 2 else 0.0], dtype=float)
+                L += b.mass * np.cross(r3, v3)
+        return float(np.linalg.norm(L))
+
+    def _snapshot_conserved(self) -> tuple[float, float]:
+        return self._total_energy(), self._angular_momentum_magnitude()
+
+    def _refresh_conserved_reference(self) -> None:
+        """Reset baseline energy and |L| for drift readouts (after IC / body edits)."""
+        self._E0, self._L0_mag = self._snapshot_conserved()
 
     def _ghost_twin_active(self) -> bool:
         return self.scenario_id in _GHOST_TWIN_SCENARIO_IDS and len(self.bodies) == 3
@@ -367,6 +407,10 @@ class SmallNSimulator:
     def get_state(self) -> dict:
         avg_time = sum(self.frame_times) / len(self.frame_times) if self.frame_times else 0.0
 
+        E_now, L_now = self._snapshot_conserved()
+        e_drift_pct = 100.0 * (E_now - self._E0) / max(abs(self._E0), 1e-300)
+        l_drift_pct = 100.0 * (L_now - self._L0_mag) / max(abs(self._L0_mag), 1e-12)
+
         out: dict = {
             "bodies": self._serialize_bodies(self.bodies, self._accelerations),
             "params": {
@@ -378,6 +422,15 @@ class SmallNSimulator:
                 "compute_time_ms": round(self.compute_time_ms, 3),
                 "avg_fps": round(1.0 / avg_time) if avg_time > 0 else 0,
                 "body_count": len(self.bodies),
+                "energy_drift_pct": round(e_drift_pct, 6),
+            },
+            "honesty": {
+                "total_energy": E_now,
+                "angular_momentum_mag": L_now,
+                "energy_drift_pct": e_drift_pct,
+                "angular_momentum_drift_pct": l_drift_pct,
+                "softening": self.softening,
+                "integrator": "velocity_verlet",
             },
         }
         if self._ghost_bodies is not None:
@@ -460,6 +513,7 @@ class SmallNSimulator:
             for b in self.bodies
         ]
         self._init_ghost_twin()
+        self._refresh_conserved_reference()
 
 
 # ============================================================================

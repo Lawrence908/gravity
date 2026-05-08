@@ -291,6 +291,15 @@
             <hr class="divider">
 
             <section>
+              <h3>Simulation honesty</h3>
+              <div id="honestyReadout" class="hint" style="font-family: ui-monospace, monospace; font-size: 11px; line-height: 1.5; white-space: pre-wrap;">
+                Connect to Ethan’s small-N sim to see live energy and angular momentum checks.
+              </div>
+            </section>
+
+            <hr class="divider">
+
+            <section>
               <h3>Visualization</h3>
               <label class="row-inline" style="cursor: pointer;">
                 <input type="checkbox" id="chkShowForces" style="width: auto; margin-right: 8px;">
@@ -1056,6 +1065,22 @@
         }
       }
 
+      // Honesty / diagnostics (Ethan sim and similar)
+      const honEl = document.getElementById('honestyReadout');
+      if (honEl) {
+        const h = state.honesty;
+        if (h && typeof h.total_energy === 'number') {
+          const fmt = (x) => (Math.abs(x) < 1e-2 || Math.abs(x) > 1e5 ? x.toExponential(4) : x.toPrecision(6));
+          honEl.textContent =
+            `E_total = ${fmt(h.total_energy)}   (ΔE/E₀ = ${(h.energy_drift_pct ?? 0).toFixed(4)}%)\n` +
+            `|L| = ${fmt(h.angular_momentum_mag)}   (ΔL/L₀ = ${(h.angular_momentum_drift_pct ?? 0).toFixed(4)}%)\n` +
+            `dt = ${state.params?.dt ?? '—'}   softening ε = ${h.softening}\n` +
+            `Integrator: ${h.integrator}`;
+        } else if (mode === 'realtime' && wsConnected) {
+          honEl.textContent = 'This simulator does not publish honesty diagnostics.';
+        }
+      }
+
       // Performance HUD
       const perf = state.performance;
       if (perf) {
@@ -1195,6 +1220,8 @@
       document.getElementById('btnConnect').style.display = '';
       document.getElementById('btnDisconnect').style.display = 'none';
       document.getElementById('perfHud').style.display = 'none';
+      const honEl = document.getElementById('honestyReadout');
+      if (honEl) honEl.textContent = 'Connect to Ethan’s small-N sim to see live energy and angular momentum checks.';
     }
 
     function sendWsMessage(msg) {
