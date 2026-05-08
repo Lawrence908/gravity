@@ -338,9 +338,10 @@ class SmallNSimulator:
         if len(self.frame_times) > 120:
             self.frame_times.pop(0)
 
-    def _serialize_bodies(self, bodies: list[Body]) -> dict:
+    def _serialize_bodies(self, bodies: list[Body], accelerations: list[np.ndarray] | None = None) -> dict:
         max_mass = max(b.mass for b in bodies) if bodies else 1.0
         positions, velocities, masses, radii, colors, names = [], [], [], [], [], []
+        acc_list: list[list[float]] | None = [] if accelerations is not None else None
         for i, b in enumerate(bodies):
             positions.append(b.position.tolist())
             velocities.append(b.velocity.tolist())
@@ -349,6 +350,8 @@ class SmallNSimulator:
             radii.append(max(0.03, r))
             colors.append(BODY_COLORS.get(b.name, [0, 0, 70]))
             names.append(b.name)
+            if acc_list is not None and accelerations is not None and i < len(accelerations):
+                acc_list.append(accelerations[i].tolist())
         out: dict = {
             "positions": positions,
             "velocities": velocities,
@@ -357,13 +360,15 @@ class SmallNSimulator:
             "colors": colors,
             "names": names,
         }
+        if acc_list is not None:
+            out["accelerations"] = acc_list
         return out
 
     def get_state(self) -> dict:
         avg_time = sum(self.frame_times) / len(self.frame_times) if self.frame_times else 0.0
 
         out: dict = {
-            "bodies": self._serialize_bodies(self.bodies),
+            "bodies": self._serialize_bodies(self.bodies, self._accelerations),
             "params": {
                 "G": self.G,
                 "dt": self.dt,
@@ -376,7 +381,7 @@ class SmallNSimulator:
             },
         }
         if self._ghost_bodies is not None:
-            out["ghost_bodies"] = self._serialize_bodies(self._ghost_bodies)
+            out["ghost_bodies"] = self._serialize_bodies(self._ghost_bodies, self._ghost_accelerations)
             out["params"]["ghost_twin"] = True
             out["params"]["ghost_velocity_scale"] = _GHOST_VELOCITY_PERTURBATION
         else:
