@@ -314,7 +314,9 @@
               <h3>Parameters</h3>
               <label>Time step (dt)</label>
               <input type="number" id="paramDt" value="0.002" step="0.0001" min="0">
-              <button type="button" id="btnUpdateParams" style="margin-top: 4px;">Apply</button>
+              <label for="dtSlider" class="hint" style="margin-top: 8px;">Slider: larger dt → visible integration breakdown</label>
+              <input type="range" id="dtSlider" min="0.0005" max="0.15" step="0.0005" value="0.01" style="width: 100%; margin-top: 4px;">
+              <button type="button" id="btnUpdateParams" style="margin-top: 4px;">Apply dt from field</button>
             </section>
           </div>
 
@@ -422,6 +424,7 @@
     // Real-time state
     let ws = null;
     let wsConnected = false;
+    let lastLiveDtSent = 0;
     let latestState = null;
     let rtTrailHistory = {};  // bodyIndex → [{pos, step}]
     let rtGhostTrailHistory = {};
@@ -924,6 +927,18 @@
       return (Math.round(f(0) * 255) << 16) | (Math.round(f(8) * 255) << 8) | Math.round(f(4) * 255);
     }
 
+    function syncDtControlsFromServer(dt) {
+      if (dt == null || Number.isNaN(Number(dt))) return;
+      const p = document.getElementById('paramDt');
+      const s = document.getElementById('dtSlider');
+      const v = Number(dt);
+      if (p) p.value = String(v);
+      if (s) {
+        const smin = parseFloat(s.min);
+        const smax = parseFloat(s.max);
+        s.value = String(Math.min(smax, Math.max(smin, v)));
+      }
+    }
 
     function applyRealtimeState(state, opts = {}) {
       if (!state || !state.bodies) return;
@@ -933,6 +948,8 @@
       const n = positions.length;
       const is2D = n > 0 && positions[0].length === 2;
       const paused = !!state.paused;
+
+      syncDtControlsFromServer(state.params?.dt);
 
       const ghostBodiesRaw = state.ghost_bodies;
       const ghostN0 = ghostBodiesRaw && ghostBodiesRaw.positions ? ghostBodiesRaw.positions.length : 0;
@@ -1499,6 +1516,26 @@
       const dt = parseFloat(document.getElementById('paramDt').value);
       if (!isNaN(dt)) sendWsMessage({ type: 'update_params', data: { dt } });
     };
+    const dtSlider = document.getElementById('dtSlider');
+    const paramDtEl = document.getElementById('paramDt');
+    if (dtSlider && paramDtEl) {
+      dtSlider.addEventListener('input', () => {
+        const dt = parseFloat(dtSlider.value);
+        if (!Number.isNaN(dt)) paramDtEl.value = String(dt);
+        if (!wsConnected) return;
+        const now = performance.now();
+        if (now - lastLiveDtSent < 80) return;
+        lastLiveDtSent = now;
+        sendWsMessage({ type: 'update_params', data: { dt } });
+      });
+      paramDtEl.addEventListener('change', () => {
+        const dt = parseFloat(paramDtEl.value);
+        if (Number.isNaN(dt)) return;
+        const smin = parseFloat(dtSlider.min);
+        const smax = parseFloat(dtSlider.max);
+        dtSlider.value = String(Math.min(smax, Math.max(smin, dt)));
+      });
+    }
     document.getElementById('btnAddBody').onclick = () => {
       const pos = readVecInputs('addPos');
       const vel = readVecInputs('addVel');
