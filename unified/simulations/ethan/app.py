@@ -444,8 +444,20 @@ class SmallNSimulator:
     def reset(self, scenario=None):
         self.__init__(scenario=scenario or self.scenario_id)
 
+    def _body_dimension_from_data(self, data: dict) -> int:
+        if self.bodies:
+            return len(self.bodies[0].position)
+
+        pos = data.get("pos")
+        vel = data.get("vel")
+        inferred_dim = max(
+            len(pos) if isinstance(pos, (list, tuple, np.ndarray)) else 0,
+            len(vel) if isinstance(vel, (list, tuple, np.ndarray)) else 0,
+        )
+        return max(3, inferred_dim)
+
     def add_body(self, data: dict):
-        dim = len(self.bodies[0].position) if self.bodies else 2
+        dim = self._body_dimension_from_data(data)
         pos = _coerce_vector(data.get("pos", [0.0] * dim), dim)
         vel = _coerce_vector(data.get("vel", [0.0] * dim), dim)
         mass = float(data.get("mass", 1.0))
