@@ -1074,11 +1074,27 @@
           const item = document.createElement('div');
           item.className = 'body-item' + (selectedBodyIndex === i ? ' selected' : '');
           item.dataset.index = String(i);
-          item.innerHTML =
-            `<span class="body-dot" style="background:${color}"></span>` +
-            `<span class="body-idx">#${i}</span>` +
-            `<span class="body-name">${name}</span>` +
-            `<span class="body-mass">${massStr}</span>`;
+
+          const dot = document.createElement('span');
+          dot.className = 'body-dot';
+          dot.style.background = color;
+
+          const idx = document.createElement('span');
+          idx.className = 'body-idx';
+          idx.textContent = `#${i}`;
+
+          const nameEl = document.createElement('span');
+          nameEl.className = 'body-name';
+          nameEl.textContent = String(name);
+
+          const massEl = document.createElement('span');
+          massEl.className = 'body-mass';
+          massEl.textContent = String(massStr);
+
+          item.appendChild(dot);
+          item.appendChild(idx);
+          item.appendChild(nameEl);
+          item.appendChild(massEl);
           item.onclick = () => selectBody(i);
           listEl.appendChild(item);
         }
