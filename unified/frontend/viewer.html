@@ -402,6 +402,8 @@
     let scene, camera, renderer, controls;
     let gridHelper = null;
     let viewLockedOn = false;
+    /** When true, subtract COM so the barycentre stays at the origin (real-time). */
+    let comFrameEnabled = false;
     const dummy = new THREE.Object3D();
     const BG_COLOR = 0x0a0a12;
 
