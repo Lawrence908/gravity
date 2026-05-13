@@ -41,16 +41,55 @@ def _gravitational_acceleration(body, bodies, G, softening=0.0):
     return acceleration
 
 
+def _velocity_verlet_step(bodies: list[Body], accelerations: list[np.ndarray], dt: float, G: float, softening: float) -> list[np.ndarray]:
+    """One Velocity-Verlet step; mutates ``bodies`` and returns the new acceleration list."""
+    for i, body in enumerate(bodies):
+        body.position = body.position + body.velocity * dt + 0.5 * accelerations[i] * dt**2
+
+    new_acc = [_gravitational_acceleration(b, bodies, G, softening) for b in bodies]
+    for i, body in enumerate(bodies):
+        body.velocity = body.velocity + 0.5 * (accelerations[i] + new_acc[i]) * dt
+    return new_acc
+
+
+# Scenarios where we run a second copy with a tiny IC change (chaos / sensitivity demo).
+_GHOST_TWIN_SCENARIO_IDS = frozenset({
+    "three_body",
+    "three_body_chaotic",
+    "figure_eight",
+    "three_body_ejection",
+})
+# Relative change applied to one body's velocity in the ghost copy (0.1%).
+_GHOST_VELOCITY_PERTURBATION = 1.001
+
+
 # ============================================================================
 # SCENARIO FACTORIES
 # ============================================================================
 
+def _coerce_vector(v, dim: int) -> list[float]:
+    """Coerce an input vector to the requested dimensionality."""
+    arr = np.array(v, dtype=float).reshape(-1)
+    if arr.size < dim:
+        arr = np.pad(arr, (0, dim - arr.size), mode="constant")
+    elif arr.size > dim:
+        arr = arr[:dim]
+    return arr.tolist()
+
+
 def create_three_body(positions=None, velocities=None, masses=None):
-    """Pythagorean 3-body: vertices of a 3-4-5 right triangle, starting at rest."""
+    """Pythagorean 3-body: vertices of a 3-4-5 right triangle, starting at rest.
+
+    Returns a 3D system (x, y, z) with z=0 by default.
+    """
     n = 3
     masses = masses or [3.0, 4.0, 5.0]
-    positions = positions or [[1.0, 3.0], [-2.0, -1.0], [1.0, -1.0]]
-    velocities = velocities or [[0.0, 0.0]] * n
+    # Small out-of-plane offsets so the 3D viewer shows depth immediately.
+    positions = positions or [[1.0, 3.0, 0.20], [-2.0, -1.0, -0.15], [1.0, -1.0, 0.00]]
+    velocities = velocities or [[0.0, 0.0, 0.0]] * n
+
+    positions = [_coerce_vector(p, 3) for p in positions]
+    velocities = [_coerce_vector(v, 3) for v in velocities]
 
     total_mass = sum(masses)
     com_pos = sum(m * np.array(p) for m, p in zip(masses, positions)) / total_mass
@@ -59,6 +98,72 @@ def create_three_body(positions=None, velocities=None, masses=None):
     velocities = [(np.array(v) - com_vel).tolist() for v in velocities]
 
     return [Body(masses[i], positions[i], velocities[i], f"Body {i+1}") for i in range(n)]
+
+
+def _recenter_bodies(bodies: list[Body]) -> None:
+    """Translate positions and velocities to the centre-of-mass frame."""
+    if not bodies:
+        return
+    total_mass = sum(b.mass for b in bodies)
+    if total_mass <= 0:
+        return
+    com_pos = sum(b.mass * b.position for b in bodies) / total_mass
+    com_vel = sum(b.mass * b.velocity for b in bodies) / total_mass
+    for b in bodies:
+        b.position = b.position - com_pos
+        b.velocity = b.velocity - com_vel
+
+
+def create_two_body():
+    """Two masses in a circular orbit in the COM frame (3D with z=0)."""
+    m1, m2 = 5.0, 1.0
+    r_sep = 2.5
+    r1 = r_sep * m2 / (m1 + m2)
+    r2 = r_sep * m1 / (m1 + m2)
+    G = 1.0
+    v_orb = math.sqrt(G * (m1 + m2) / r_sep)
+    v1 = v_orb * m2 / (m1 + m2)
+    v2 = v_orb * m1 / (m1 + m2)
+    bodies = [
+        Body(m1, [-r1, 0.0, 0.0], [0.0, -v1, 0.0], "Body 1"),
+        Body(m2, [r2, 0.0, 0.0], [0.0, v2, 0.0], "Body 2"),
+    ]
+    _recenter_bodies(bodies)
+    return bodies
+
+
+def create_figure_eight():
+    """Equal-mass planar figure-eight orbit (Moore / Chenciner–Montgomery data)."""
+    m = 1.0
+    x1, y1 = -0.97000436, 0.24308753
+    x2, y2 = 0.0, 0.0
+    x3, y3 = 0.97000436, -0.24308753
+    vx1, vy1 = 0.466203685, 0.432365730
+    vx2, vy2 = -0.93240737, -0.86473146
+    vx3, vy3 = 0.466203685, 0.432365730
+    bodies = [
+        Body(m, [x1, y1, 0.0], [vx1, vy1, 0.0], "Body 1"),
+        Body(m, [x2, y2, 0.0], [vx2, vy2, 0.0], "Body 2"),
+        Body(m, [x3, y3, 0.0], [vx3, vy3, 0.0], "Body 3"),
+    ]
+    _recenter_bodies(bodies)
+    return bodies
+
+
+def create_three_body_chaotic():
+    """Alias for the classic Pythagorean chaotic configuration."""
+    return create_three_body()
+
+
+def create_three_body_ejection():
+    """Tight binary plus low-mass interloper that typically gains energy and escapes."""
+    bodies = [
+        Body(5.0, [-1.0, 0.0, 0.0], [0.0, -0.55, 0.05], "Body 1"),
+        Body(5.0, [1.0, 0.0, 0.0], [0.0, 0.55, -0.05], "Body 2"),
+        Body(0.08, [0.0, 3.5, 0.1], [0.25, 0.05, 0.0], "Body 3"),
+    ]
+    _recenter_bodies(bodies)
+    return bodies
 
 
 def create_pluto_system():
@@ -115,12 +220,45 @@ BODY_COLORS = {
 }
 
 SCENARIOS = {
+    "two_body": {
+        "name": "Two-Body Circular Orbit",
+        "description": "Clean bound orbit of two masses in the COM frame",
+        "factory": create_two_body,
+        "G": 1.0,
+        "dt": 0.01,
+        "softening": 0.005,
+    },
+    "figure_eight": {
+        "name": "Figure-Eight Three-Body",
+        "description": "Equal masses, periodic planar special solution",
+        "factory": create_figure_eight,
+        "G": 1.0,
+        "dt": 0.005,
+        "softening": 0.002,
+    },
     "three_body": {
         "name": "Chaotic Three-Body Problem",
-        "description": "Pythagorean 3-4-5 triangle masses in chaotic orbit (2D)",
+        "description": "Pythagorean 3-4-5 triangle masses in chaotic orbit (3D)",
         "factory": create_three_body,
         "G": 1.0,
-        "dt": 0.001,
+        # dt=0.001 is physically fine but visually imperceptible at ~120fps.
+        "dt": 0.01,
+        "softening": 0.01,
+    },
+    "three_body_chaotic": {
+        "name": "Chaotic Encounter (Pythagorean)",
+        "description": "Same as classic chaotic three-body preset (3D triangle)",
+        "factory": create_three_body_chaotic,
+        "G": 1.0,
+        "dt": 0.01,
+        "softening": 0.01,
+    },
+    "three_body_ejection": {
+        "name": "Ejection / Slingshot",
+        "description": "Heavy binary with a light third body that often escapes",
+        "factory": create_three_body_ejection,
+        "G": 1.0,
+        "dt": 0.008,
         "softening": 0.01,
     },
     "pluto_system": {
@@ -156,22 +294,82 @@ class SmallNSimulator:
             _gravitational_acceleration(b, self.bodies, self.G, self.softening)
             for b in self.bodies
         ]
+        self._ghost_bodies: list[Body] | None = None
+        self._ghost_accelerations: list[np.ndarray] | None = None
+        self._init_ghost_twin()
+        self._E0 = 0.0
+        self._L0_mag = 0.0
+        self._refresh_conserved_reference()
+
+    def _total_energy(self) -> float:
+        bodies = self.bodies
+        ke = 0.0
+        for b in bodies:
+            v2 = float(np.dot(b.velocity, b.velocity))
+            ke += 0.5 * b.mass * v2
+        pe = 0.0
+        n = len(bodies)
+        eps = self.softening
+        G = self.G
+        for i in range(n):
+            for j in range(i + 1, n):
+                r_vec = bodies[j].position - bodies[i].position
+                dist = math.sqrt(float(np.dot(r_vec, r_vec)) + eps * eps)
+                if dist > 1e-15:
+                    pe -= G * bodies[i].mass * bodies[j].mass / dist
+        return ke + pe
+
+    def _angular_momentum_magnitude(self) -> float:
+        L = np.zeros(3, dtype=float)
+        for b in self.bodies:
+            r = b.position
+            v = b.velocity
+            if len(r) == 2:
+                L[2] += b.mass * float(r[0] * v[1] - r[1] * v[0])
+            else:
+                r3 = np.array([r[0], r[1], float(r[2]) if len(r) > 2 else 0.0], dtype=float)
+                v3 = np.array([v[0], v[1], float(v[2]) if len(v) > 2 else 0.0], dtype=float)
+                L += b.mass * np.cross(r3, v3)
+        return float(np.linalg.norm(L))
+
+    def _snapshot_conserved(self) -> tuple[float, float]:
+        return self._total_energy(), self._angular_momentum_magnitude()
+
+    def _refresh_conserved_reference(self) -> None:
+        """Reset baseline energy and |L| for drift readouts (after IC / body edits)."""
+        self._E0, self._L0_mag = self._snapshot_conserved()
+
+    def _ghost_twin_active(self) -> bool:
+        return self.scenario_id in _GHOST_TWIN_SCENARIO_IDS and len(self.bodies) == 3
+
+    def _init_ghost_twin(self) -> None:
+        """Clone the main system and nudge one body's velocity by 0.1% for a chaos demo."""
+        if not self._ghost_twin_active():
+            self._ghost_bodies = None
+            self._ghost_accelerations = None
+            return
+        self._ghost_bodies = [
+            Body(b.mass, np.array(b.position, copy=True), np.array(b.velocity, copy=True), b.name)
+            for b in self.bodies
+        ]
+        self._ghost_bodies[0].velocity = self._ghost_bodies[0].velocity * _GHOST_VELOCITY_PERTURBATION
+        self._ghost_accelerations = [
+            _gravitational_acceleration(b, self._ghost_bodies, self.G, self.softening)
+            for b in self._ghost_bodies
+        ]
 
     def step(self):
         t0 = time.perf_counter()
         dt = self.dt
 
-        for i, body in enumerate(self.bodies):
-            body.position += body.velocity * dt + 0.5 * self._accelerations[i] * dt ** 2
+        self._accelerations = _velocity_verlet_step(
+            self.bodies, self._accelerations, dt, self.G, self.softening
+        )
+        if self._ghost_bodies is not None and self._ghost_accelerations is not None:
+            self._ghost_accelerations = _velocity_verlet_step(
+                self._ghost_bodies, self._ghost_accelerations, dt, self.G, self.softening
+            )
 
-        new_acc = [
-            _gravitational_acceleration(b, self.bodies, self.G, self.softening)
-            for b in self.bodies
-        ]
-        for i, body in enumerate(self.bodies):
-            body.velocity += 0.5 * (self._accelerations[i] + new_acc[i]) * dt
-
-        self._accelerations = new_acc
         self.step_count += 1
 
         elapsed = time.perf_counter() - t0
@@ -180,12 +378,11 @@ class SmallNSimulator:
         if len(self.frame_times) > 120:
             self.frame_times.pop(0)
 
-    def get_state(self) -> dict:
-        avg_time = sum(self.frame_times) / len(self.frame_times) if self.frame_times else 0.0
-        max_mass = max(b.mass for b in self.bodies) if self.bodies else 1.0
-
+    def _serialize_bodies(self, bodies: list[Body], accelerations: list[np.ndarray] | None = None) -> dict:
+        max_mass = max(b.mass for b in bodies) if bodies else 1.0
         positions, velocities, masses, radii, colors, names = [], [], [], [], [], []
-        for b in self.bodies:
+        acc_list: list[list[float]] | None = [] if accelerations is not None else None
+        for i, b in enumerate(bodies):
             positions.append(b.position.tolist())
             velocities.append(b.velocity.tolist())
             masses.append(b.mass)
@@ -193,16 +390,29 @@ class SmallNSimulator:
             radii.append(max(0.03, r))
             colors.append(BODY_COLORS.get(b.name, [0, 0, 70]))
             names.append(b.name)
+            if acc_list is not None and accelerations is not None and i < len(accelerations):
+                acc_list.append(accelerations[i].tolist())
+        out: dict = {
+            "positions": positions,
+            "velocities": velocities,
+            "masses": masses,
+            "radii": radii,
+            "colors": colors,
+            "names": names,
+        }
+        if acc_list is not None:
+            out["accelerations"] = acc_list
+        return out
 
-        return {
-            "bodies": {
-                "positions": positions,
-                "velocities": velocities,
-                "masses": masses,
-                "radii": radii,
-                "colors": colors,
-                "names": names,
-            },
+    def get_state(self) -> dict:
+        avg_time = sum(self.frame_times) / len(self.frame_times) if self.frame_times else 0.0
+
+        E_now, L_now = self._snapshot_conserved()
+        e_drift_pct = 100.0 * (E_now - self._E0) / max(abs(self._E0), 1e-300)
+        l_drift_pct = 100.0 * (L_now - self._L0_mag) / max(abs(self._L0_mag), 1e-12)
+
+        out: dict = {
+            "bodies": self._serialize_bodies(self.bodies, self._accelerations),
             "params": {
                 "G": self.G,
                 "dt": self.dt,
@@ -212,22 +422,110 @@ class SmallNSimulator:
                 "compute_time_ms": round(self.compute_time_ms, 3),
                 "avg_fps": round(1.0 / avg_time) if avg_time > 0 else 0,
                 "body_count": len(self.bodies),
+                "energy_drift_pct": round(e_drift_pct, 6),
+            },
+            "honesty": {
+                "total_energy": E_now,
+                "angular_momentum_mag": L_now,
+                "energy_drift_pct": e_drift_pct,
+                "angular_momentum_drift_pct": l_drift_pct,
+                "softening": self.softening,
+                "integrator": "velocity_verlet",
             },
         }
+        if self._ghost_bodies is not None:
+            out["ghost_bodies"] = self._serialize_bodies(self._ghost_bodies, self._ghost_accelerations)
+            out["params"]["ghost_twin"] = True
+            out["params"]["ghost_velocity_scale"] = _GHOST_VELOCITY_PERTURBATION
+        else:
+            out["params"]["ghost_twin"] = False
+        return out
 
     def reset(self, scenario=None):
         self.__init__(scenario=scenario or self.scenario_id)
 
+    def _body_dimension_from_data(self, data: dict) -> int:
+        if self.bodies:
+            return len(self.bodies[0].position)
+
+        pos = data.get("pos")
+        vel = data.get("vel")
+        inferred_dim = max(
+            len(pos) if isinstance(pos, (list, tuple, np.ndarray)) else 0,
+            len(vel) if isinstance(vel, (list, tuple, np.ndarray)) else 0,
+        )
+        return max(3, inferred_dim)
+
     def add_body(self, data: dict):
-        dim = len(self.bodies[0].position) if self.bodies else 2
-        pos = data.get("pos", [0.0] * dim)
-        vel = data.get("vel", [0.0] * dim)
+        dim = self._body_dimension_from_data(data)
+        pos = _coerce_vector(data.get("pos", [0.0] * dim), dim)
+        vel = _coerce_vector(data.get("vel", [0.0] * dim), dim)
         mass = float(data.get("mass", 1.0))
         name = data.get("name", f"Body {len(self.bodies) + 1}")
         self.bodies.append(Body(mass, pos, vel, name))
-        self._accelerations.append(
-            _gravitational_acceleration(self.bodies[-1], self.bodies, self.G, self.softening)
-        )
+        self._recompute_accelerations()
+
+    def update_body(self, data: dict):
+        if not self.bodies:
+            return
+        idx = int(data.get("index", -1))
+        if idx < 0 or idx >= len(self.bodies):
+            return
+        dim = len(self.bodies[0].position)
+        b = self.bodies[idx]
+        if "pos" in data:
+            b.position = np.array(_coerce_vector(data.get("pos"), dim), dtype=float)
+        if "vel" in data:
+            b.velocity = np.array(_coerce_vector(data.get("vel"), dim), dtype=float)
+        if "mass" in data and data.get("mass") is not None:
+            b.mass = float(data.get("mass"))
+        if "name" in data and data.get("name") is not None:
+            b.name = str(data.get("name"))
+        self._recompute_accelerations()
+
+    def remove_body(self, data: dict):
+        if not self.bodies:
+            return
+        idx = int(data.get("index", -1))
+        if idx < 0 or idx >= len(self.bodies):
+            return
+        self.bodies.pop(idx)
+        self._recompute_accelerations()
+
+    def randomize_bodies(self, data: dict | None = None):
+        """Randomize mass/pos/vel for all bodies and recenter to COM."""
+        if not self.bodies:
+            return
+        data = data or {}
+        dim = len(self.bodies[0].position)
+
+        pos_scale = float(data.get("pos_scale", 3.0))
+        vel_scale = float(data.get("vel_scale", 1.0))
+        m_min = float(data.get("m_min", 0.5))
+        m_max = float(data.get("m_max", 5.0))
+
+        rng = np.random.default_rng()
+        for b in self.bodies:
+            b.mass = float(rng.uniform(m_min, m_max))
+            b.position = rng.uniform(-pos_scale, pos_scale, size=(dim,)).astype(float)
+            b.velocity = rng.uniform(-vel_scale, vel_scale, size=(dim,)).astype(float)
+
+        total_mass = sum(b.mass for b in self.bodies) or 1.0
+        com_pos = sum(b.mass * b.position for b in self.bodies) / total_mass
+        com_vel = sum(b.mass * b.velocity for b in self.bodies) / total_mass
+        for b in self.bodies:
+            b.position = b.position - com_pos
+            b.velocity = b.velocity - com_vel
+
+        self._recompute_accelerations()
+
+    def _recompute_accelerations(self):
+        self._accelerations = [
+            _gravitational_acceleration(b, self.bodies, self.G, self.softening)
+            for b in self.bodies
+        ]
+        self._init_ghost_twin()
+        self._refresh_conserved_reference()
 
 
 # ============================================================================
@@ -242,6 +540,7 @@ class AsyncSimulator:
         self.state_queue: Queue = Queue(maxsize=2)
         self.command_queue: Queue = Queue()
         self.running = True
+        self.paused = False
         self.physics_fps = fps
         self.sim_lock = threading.Lock()
         self._shutdown_event = threading.Event()
@@ -267,10 +566,12 @@ class AsyncSimulator:
                 pass
 
             with self.sim_lock:
-                self.sim.step()
+                if not self.paused:
+                    self.sim.step()
                 state = self.sim.get_state()
 
             state["reset_occurred"] = reset_occurred
+            state["paused"] = self.paused
 
             try:
                 self.state_queue.put_nowait(state)
@@ -295,6 +596,18 @@ class AsyncSimulator:
             elif cmd_type == "add_body":
                 self.sim.add_body(data)
                 return False
+            elif cmd_type == "update_body":
+                self.sim.update_body(data)
+                return False
+            elif cmd_type == "remove_body":
+                self.sim.remove_body(data)
+                return False
+            elif cmd_type == "randomize_bodies":
+                self.sim.randomize_bodies(data)
+                return False
+            elif cmd_type == "set_paused":
+                self.paused = bool(data.get("paused", False))
+                return False
             elif cmd_type == "reset":
                 scenario = data.get("scenario", self.sim.scenario_id)
                 self.sim.reset(scenario=scenario)
@@ -303,6 +616,8 @@ class AsyncSimulator:
                         self.state_queue.get_nowait()
                     except Empty:
                         break
+                if data.get("paused") is not None:
+                    self.paused = bool(data.get("paused"))
                 return True
             else:
                 print(f"[EthanSim] Unknown command: {cmd_type}")
@@ -322,7 +637,8 @@ class AsyncSimulator:
         self.command_queue.put(cmd)
 
     def calculate_velocity(self, position, mass):
-        return [0.0, 0.0]
+        dim = len(self.sim.bodies[0].position) if self.sim.bodies else 3
+        return [0.0] * dim
 
     def stop(self):
         self.running = False

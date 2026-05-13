@@ -119,10 +119,18 @@
     /* Body list */
     #bodyList { max-height: 200px; overflow-y: auto; font-size: 12px; margin: 6px 0; }
     #bodyList .body-item {
-      display: flex; align-items: center; gap: 6px; padding: 3px 0;
+      display: flex; align-items: center; gap: 8px; padding: 8px 8px;
       border-bottom: 1px solid rgba(255,255,255,0.04);
+      cursor: pointer;
+      border-radius: 10px;
+    }
+    #bodyList .body-item:hover { background: rgba(255,255,255,0.06); }
+    #bodyList .body-item.selected {
+      background: rgba(110, 168, 255, 0.12);
+      outline: 1px solid rgba(110, 168, 255, 0.25);
     }
     #bodyList .body-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    #bodyList .body-idx { color: var(--text-muted); font-family: monospace; font-size: 11px; width: 2.5em; flex: 0 0 auto; }
     #bodyList .body-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #bodyList .body-mass { color: var(--text-muted); font-family: monospace; font-size: 11px; }
 
@@ -234,6 +242,7 @@
                 <button type="button" id="btnConnect" class="primary">Connect</button>
                 <button type="button" id="btnDisconnect" class="danger" style="display:none;">Disconnect</button>
                 <button type="button" id="btnReset">Reset</button>
+                <button type="button" id="btnPlayPause">Pause</button>
               </div>
               <p id="wsStatus" class="hint">Disconnected</p>
             </section>
@@ -242,18 +251,29 @@
 
             <section>
               <h3>Bodies</h3>
+              <p class="hint">Click a body to select it for editing.</p>
+              <div class="row-inline" style="margin: 6px 0 4px 0;">
+                <button type="button" id="btnRandomize">Randomize</button>
+                <span id="selectedLabel" class="hint" style="margin: 0;">Selected: —</span>
+              </div>
               <div id="bodyList"></div>
             </section>
 
             <hr class="divider">
 
             <section>
-              <h3>Add Body</h3>
+              <h3>Add / Edit Body</h3>
               <label>Position (x, y, z)</label>
               <div class="row-inline">
                 <input type="number" id="addPosX" value="3" step="0.1" style="width:30%">
                 <input type="number" id="addPosY" value="0" step="0.1" style="width:30%">
                 <input type="number" id="addPosZ" value="0" step="0.1" style="width:30%">
+              </div>
+              <label>Velocity (vx, vy, vz)</label>
+              <div class="row-inline">
+                <input type="number" id="addVelX" value="0" step="0.1" style="width:30%">
+                <input type="number" id="addVelY" value="0" step="0.1" style="width:30%">
+                <input type="number" id="addVelZ" value="0" step="0.1" style="width:30%">
               </div>
               <label>Mass</label>
               <input type="number" id="addMass" value="0.001" step="0.0001" min="0">
@@ -262,8 +282,30 @@
               <div class="row-inline" style="margin-top: 4px;">
                 <button type="button" id="btnCalcVel">Calc orbit vel</button>
                 <button type="button" id="btnAddBody" class="primary">Add</button>
+                <button type="button" id="btnUpdateBody">Update</button>
+                <button type="button" id="btnRemoveBody" class="danger">Remove</button>
               </div>
               <p id="calcVelResult" class="hint"></p>
+            </section>
+
+            <hr class="divider">
+
+            <section>
+              <h3>Simulation honesty</h3>
+              <div id="honestyReadout" class="hint" style="font-family: ui-monospace, monospace; font-size: 11px; line-height: 1.5; white-space: pre-wrap;">
+                Connect to Ethan’s small-N sim to see live energy and angular momentum checks.
+              </div>
+            </section>
+
+            <hr class="divider">
+
+            <section>
+              <h3>Visualization</h3>
+              <label class="row-inline" style="cursor: pointer;">
+                <input type="checkbox" id="chkShowForces" style="width: auto; margin-right: 8px;">
+                Show acceleration vectors
+              </label>
+              <p class="hint">Vectors scale roughly with |a|; many arrows can clutter the view.</p>
             </section>
 
             <hr class="divider">
@@ -272,7 +314,9 @@
               <h3>Parameters</h3>
               <label>Time step (dt)</label>
               <input type="number" id="paramDt" value="0.002" step="0.0001" min="0">
-              <button type="button" id="btnUpdateParams" style="margin-top: 4px;">Apply</button>
+              <label for="dtSlider" class="hint" style="margin-top: 8px;">Slider: larger dt → visible integration breakdown</label>
+              <input type="range" id="dtSlider" min="0.0005" max="0.15" step="0.0005" value="0.01" style="width: 100%; margin-top: 4px;">
+              <button type="button" id="btnUpdateParams" style="margin-top: 4px;">Apply dt from field</button>
             </section>
           </div>
 
@@ -288,6 +332,7 @@
               <button type="button" id="viewSide">Side</button>
               <button type="button" id="viewLock">Lock on</button>
               <button type="button" id="viewGrid">Grid</button>
+              <button type="button" id="viewComFrame" title="Fix the system barycentre at the origin">COM frame</button>
             </div>
           </section>
         </div>
@@ -325,7 +370,13 @@
         </div>
       </div>
       <div class="controls-right">
-        <span style="color: var(--text-muted);">Trails</span>
+        <label for="trailModeSelect" style="color: var(--text-muted);">Trails</label>
+        <select id="trailModeSelect" title="Trail style" style="min-width: 6.5em;">
+          <option value="off">Off</option>
+          <option value="fade" selected>Fading</option>
+          <option value="full">Full</option>
+        </select>
+        <span style="color: var(--text-muted);">Opacity</span>
         <input type="range" id="trailOpacity" min="0" max="100" value="10" title="Trail opacity">
         <label for="trailOpacity" id="trailOpacityLabel" style="min-width: 2.5em;">10%</label>
       </div>
@@ -351,6 +402,8 @@
     let scene, camera, renderer, controls;
     let gridHelper = null;
     let viewLockedOn = false;
+    /** When true, subtract COM so the barycentre stays at the origin (real-time). */
+    let comFrameEnabled = false;
     const dummy = new THREE.Object3D();
     const BG_COLOR = 0x0a0a12;
 
@@ -366,20 +419,34 @@
     let particleInstances = null; // InstancedMesh for replay mode
     let starMesh = null;
     let trailLineMesh = null;
+    let ghostTrailLineMesh = null;
     let trailHistory = null;
     let lastTrailFrameIndex = -1;
 
     // Real-time state
     let ws = null;
     let wsConnected = false;
+    let lastLiveDtSent = 0;
     let latestState = null;
     let rtTrailHistory = {};  // bodyIndex → [{pos, step}]
+    let rtGhostTrailHistory = {};
     let rtStepCount = 0;
+    let selectedBodyIndex = null;
     let useMsgpack = false;
     let msgpackLib = null;
 
+    /** When true, draw gravitational acceleration arrows on each body (real-time). */
+    let showForceArrows = false;
+    let forceArrowHelpers = [];
+
     const TRAIL_SIM_SECONDS = 2.0;
-    const TRAIL_MAX_POINTS = 500;
+    /** Geometry buffer: max trail vertices per body (must cover "full" mode). */
+    const TRAIL_BUFFER_MAX_POINTS = 2200;
+    /** Fading mode: cap stored samples per body. */
+    const TRAIL_FADE_MAX_POINTS = 500;
+
+    /** off | fade | full — affects replay and real-time trails. */
+    let trailDisplayMode = 'fade';
     const BASE_STAR_RADIUS = 0.15;
     const MIN_PARTICLE_RADIUS = 0.02;
 
@@ -440,13 +507,110 @@
       return [p[0], p[2] ?? 0, p[1]];
     }
 
+    /** Same axis convention as ``simToThree`` for free vectors (e.g. acceleration). */
+    function simVecToThree(v, is2D) {
+      if (!v || v.length === 0) return [0, 0, 0];
+      if (is2D || v.length === 2) return [v[0], 0, v[1]];
+      return [v[0], v[2] ?? 0, v[1]];
+    }
+
+    function disposeForceArrowHelper(h) {
+      if (!h) return;
+      scene.remove(h);
+      if (h.line) {
+        h.line.geometry?.dispose?.();
+        h.line.material?.dispose?.();
+      }
+      if (h.cone) {
+        h.cone.geometry?.dispose?.();
+        h.cone.material?.dispose?.();
+      }
+    }
+
+    function disposeForceArrows() {
+      for (const h of forceArrowHelpers) disposeForceArrowHelper(h);
+      forceArrowHelpers = [];
+    }
+
+    function updateForceArrows(drawPos, accelerations, is2D, n) {
+      disposeForceArrows();
+      if (!showForceArrows || !accelerations || !drawPos || n <= 0) return;
+      const headFrac = 0.22;
+      const minLen = 0.06;
+      const maxLen = 3.5;
+      for (let i = 0; i < n; i++) {
+        const acc = accelerations[i];
+        if (!acc) continue;
+        const base = simToThree(drawPos[i], is2D);
+        const av = simVecToThree(acc, is2D);
+        const v3 = new THREE.Vector3(av[0], av[1], av[2]);
+        const L = v3.length();
+        if (L < 1e-14) continue;
+        const dir = v3.clone().normalize();
+        const len = Math.min(maxLen, Math.max(minLen, 0.38 * Math.sqrt(L)));
+        const ah = new THREE.ArrowHelper(
+          dir,
+          new THREE.Vector3(base[0], base[1], base[2]),
+          len,
+          0x66ff99,
+          len * headFrac,
+          len * headFrac * 0.65
+        );
+        ah.frustumCulled = false;
+        scene.add(ah);
+        forceArrowHelpers.push(ah);
+      }
+    }
+
+    /** Mass-weighted COM in simulation coordinates (2D or 3D). Returns null if not computable. */
+    function massWeightedCom(positions, masses, n, is2D) {
+      if (!positions || n <= 0) return null;
+      let M = 0;
+      const acc = [0, 0, 0];
+      for (let i = 0; i < n; i++) {
+        const m = masses != null && masses[i] != null ? Number(masses[i]) : 1;
+        if (!Number.isFinite(m) || m <= 0) continue;
+        const p = positions[i];
+        M += m;
+        if (is2D || (p && p.length === 2)) {
+          acc[0] += m * p[0];
+          acc[1] += m * p[1];
+        } else if (p) {
+          acc[0] += m * p[0];
+          acc[1] += m * p[1];
+          acc[2] += m * (p[2] ?? 0);
+        }
+      }
+      if (M <= 0) return null;
+      if (is2D || (positions[0] && positions[0].length === 2)) {
+        return [acc[0] / M, acc[1] / M];
+      }
+      return [acc[0] / M, acc[1] / M, acc[2] / M];
+    }
+
+    function shiftPositionsByCom(positions, com, n, is2D) {
+      if (!com || !positions) return positions;
+      const out = [];
+      const flat2 = com.length === 2 || is2D;
+      for (let i = 0; i < n; i++) {
+        const p = positions[i];
+        if (!p) { out.push(p); continue; }
+        if (flat2 || p.length === 2) {
+          out.push([p[0] - com[0], p[1] - com[1]]);
+        } else {
+          out.push([p[0] - com[0], p[1] - com[1], (p[2] ?? 0) - (com[2] ?? 0)]);
+        }
+      }
+      return out;
+    }
+
     // ======================================================================
     // TRAIL SYSTEM (shared)
     // ======================================================================
-    function createTrailMaterial() {
+    function createTrailMaterial(baseOpacity = 0.1) {
       return new THREE.ShaderMaterial({
         transparent: true, depthWrite: false,
-        uniforms: { uTrailOpacity: { value: 0.1 } },
+        uniforms: { uTrailOpacity: { value: baseOpacity } },
         vertexShader: `
           attribute float alpha;
           varying float vAlpha;
@@ -463,8 +627,26 @@
       });
     }
 
+    function getTrailLimitsReplay(dt) {
+      if (trailDisplayMode === 'off') return null;
+      const maxPoints = trailDisplayMode === 'full' ? 2000 : TRAIL_FADE_MAX_POINTS;
+      const stepWindow =
+        trailDisplayMode === 'full'
+          ? Infinity
+          : Math.min(maxPoints, Math.max(20, Math.round(TRAIL_SIM_SECONDS / dt)));
+      return { maxPoints, stepWindow };
+    }
+
+    /** Real-time trails use integer ``rtStepCount`` as step index (~frame count). */
+    function getTrailLimitsRT() {
+      if (trailDisplayMode === 'off') return null;
+      const maxPoints = trailDisplayMode === 'full' ? 2000 : TRAIL_FADE_MAX_POINTS;
+      const stepWindow = trailDisplayMode === 'full' ? null : Math.round(TRAIL_SIM_SECONDS * 120);
+      return { maxPoints, stepWindow };
+    }
+
     function buildTrailGeometry(nParticles) {
-      const maxSegments = nParticles * (TRAIL_MAX_POINTS - 1);
+      const maxSegments = nParticles * (TRAIL_BUFFER_MAX_POINTS - 1);
       const vertexCount = maxSegments * 2;
       const positions = new Float32Array(vertexCount * 3);
       const alphas = new Float32Array(vertexCount);
@@ -475,10 +657,10 @@
       return geo;
     }
 
-    function updateTrailMesh(history, is2D, nParticles) {
-      if (!trailLineMesh || !history) return;
-      const posAttr = trailLineMesh.geometry.getAttribute('position');
-      const alphaAttr = trailLineMesh.geometry.getAttribute('alpha');
+    function updateTrailMesh(lineMesh, history, is2D, nParticles) {
+      if (!lineMesh || !history) return;
+      const posAttr = lineMesh.geometry.getAttribute('position');
+      const alphaAttr = lineMesh.geometry.getAttribute('alpha');
       let segmentCount = 0;
       for (let i = 0; i < nParticles; i++) {
         const trail = history[i];
@@ -503,18 +685,39 @@
       }
       posAttr.needsUpdate = true;
       alphaAttr.needsUpdate = true;
-      trailLineMesh.geometry.setDrawRange(0, segmentCount * 2);
+      lineMesh.geometry.setDrawRange(0, segmentCount * 2);
     }
 
     function ensureTrailMesh(nParticles) {
       if (trailLineMesh) { scene.remove(trailLineMesh); trailLineMesh.geometry.dispose(); trailLineMesh.material.dispose(); }
-      trailLineMesh = new THREE.LineSegments(buildTrailGeometry(nParticles), createTrailMaterial());
+      trailLineMesh = new THREE.LineSegments(buildTrailGeometry(nParticles), createTrailMaterial(0.1));
       trailLineMesh.frustumCulled = false;
       const opEl = document.getElementById('trailOpacity');
       if (opEl && trailLineMesh.material.uniforms) {
         trailLineMesh.material.uniforms.uTrailOpacity.value = parseInt(opEl.value, 10) / 100;
       }
       scene.add(trailLineMesh);
+    }
+
+    function ensureGhostTrailMesh(nParticles) {
+      if (ghostTrailLineMesh) {
+        scene.remove(ghostTrailLineMesh);
+        ghostTrailLineMesh.geometry.dispose();
+        ghostTrailLineMesh.material.dispose();
+      }
+      ghostTrailLineMesh = new THREE.LineSegments(buildTrailGeometry(nParticles), createTrailMaterial(0.035));
+      ghostTrailLineMesh.frustumCulled = false;
+      scene.add(ghostTrailLineMesh);
+    }
+
+    function disposeGhostTrailMesh() {
+      if (ghostTrailLineMesh) {
+        scene.remove(ghostTrailLineMesh);
+        ghostTrailLineMesh.geometry.dispose();
+        ghostTrailLineMesh.material.dispose();
+        ghostTrailLineMesh = null;
+      }
+      rtGhostTrailHistory = {};
     }
 
     // ======================================================================
@@ -525,7 +728,9 @@
       if (starMesh) { scene.remove(starMesh); starMesh = null; }
       bodyMeshes.forEach(m => { scene.remove(m); m.geometry.dispose(); m.material.dispose(); });
       bodyMeshes = [];
+      disposeForceArrows();
       if (trailLineMesh) { scene.remove(trailLineMesh); trailLineMesh.geometry.dispose(); trailLineMesh.material.dispose(); trailLineMesh = null; }
+      disposeGhostTrailMesh();
       trailHistory = null;
       lastTrailFrameIndex = -1;
       rtTrailHistory = {};
@@ -643,9 +848,14 @@
       const stepsArr = replayData.steps;
       const currentStep = stepsArr ? stepsArr[frameIndex] : frameIndex * 100;
       const dt = replayData.dt || 0.01;
-      const trailSimSteps = Math.min(TRAIL_MAX_POINTS, Math.max(20, Math.round(TRAIL_SIM_SECONDS / dt)));
+      const lim = getTrailLimitsReplay(dt);
 
-      if (trailHistory && n > 0 && n <= trailHistory.length) {
+      if (trailDisplayMode === 'off' && trailHistory && n > 0 && n <= trailHistory.length) {
+        for (let i = 0; i < n; i++) trailHistory[i] = [];
+        lastTrailFrameIndex = frameIndex;
+        updateTrailMesh(trailLineMesh, trailHistory, is2D, n);
+      } else if (lim && trailHistory && n > 0 && n <= trailHistory.length) {
+        const trailSimSteps = lim.stepWindow;
         const isRewinding = lastTrailFrameIndex !== undefined && frameIndex < lastTrailFrameIndex;
         if (isRewinding) {
           for (let i = 0; i < n; i++) trailHistory[i] = trailHistory[i].filter(e => e.step <= currentStep);
@@ -660,11 +870,13 @@
           }
         }
         for (let i = 0; i < n; i++) {
-          while (trailHistory[i].length > 0 && trailHistory[i][0].step < currentStep - trailSimSteps) trailHistory[i].shift();
-          while (trailHistory[i].length > TRAIL_MAX_POINTS) trailHistory[i].shift();
+          while (trailHistory[i].length > 0 && Number.isFinite(trailSimSteps) && trailHistory[i][0].step < currentStep - trailSimSteps) {
+            trailHistory[i].shift();
+          }
+          while (trailHistory[i].length > lim.maxPoints) trailHistory[i].shift();
         }
         lastTrailFrameIndex = frameIndex;
-        updateTrailMesh(trailHistory, is2D, n);
+        updateTrailMesh(trailLineMesh, trailHistory, is2D, n);
       }
 
       if (particleInstances) {
@@ -727,12 +939,42 @@
       return (Math.round(f(0) * 255) << 16) | (Math.round(f(8) * 255) << 8) | Math.round(f(4) * 255);
     }
 
-    function applyRealtimeState(state) {
+    function syncDtControlsFromServer(dt) {
+      if (dt == null || Number.isNaN(Number(dt))) return;
+      const p = document.getElementById('paramDt');
+      const s = document.getElementById('dtSlider');
+      const v = Number(dt);
+      if (p) p.value = String(v);
+      if (s) {
+        const smin = parseFloat(s.min);
+        const smax = parseFloat(s.max);
+        s.value = String(Math.min(smax, Math.max(smin, v)));
+      }
+    }
+
+    function applyRealtimeState(state, opts = {}) {
       if (!state || !state.bodies) return;
+      const advanceTrails = opts.advanceTrails !== false;
       const bodies = state.bodies;
       const positions = bodies.positions;
       const n = positions.length;
       const is2D = n > 0 && positions[0].length === 2;
+      const paused = !!state.paused;
+
+      syncDtControlsFromServer(state.params?.dt);
+
+      const ghostBodiesRaw = state.ghost_bodies;
+      const ghostN0 = ghostBodiesRaw && ghostBodiesRaw.positions ? ghostBodiesRaw.positions.length : 0;
+      let drawPos = positions;
+      let drawGhostPos = ghostBodiesRaw && ghostN0 === n ? ghostBodiesRaw.positions : null;
+      if (comFrameEnabled) {
+        const com = massWeightedCom(positions, bodies.masses, n, is2D);
+        drawPos = shiftPositionsByCom(positions, com, n, is2D);
+        if (drawGhostPos) {
+          const gcom = massWeightedCom(ghostBodiesRaw.positions, ghostBodiesRaw.masses, n, is2D);
+          drawGhostPos = shiftPositionsByCom(ghostBodiesRaw.positions, gcom, n, is2D);
+        }
+      }
 
       // Ensure we have enough meshes
       while (bodyMeshes.length < n) {
@@ -750,7 +992,7 @@
 
       for (let i = 0; i < n; i++) {
         const mesh = bodyMeshes[i];
-        const p = simToThree(positions[i], is2D);
+        const p = simToThree(drawPos[i], is2D);
         const r = bodies.radii ? (bodies.radii[i] || 0.05) : 0.05;
         mesh.position.set(p[0], p[1], p[2]);
         mesh.scale.set(r, r, r);
@@ -761,12 +1003,24 @@
       }
 
       // Trail history for real-time
-      rtStepCount++;
-      for (let i = 0; i < n; i++) {
-        if (!rtTrailHistory[i]) rtTrailHistory[i] = [];
-        const p = simToThree(positions[i], is2D);
-        rtTrailHistory[i].push({ pos: p, step: rtStepCount });
-        while (rtTrailHistory[i].length > TRAIL_MAX_POINTS) rtTrailHistory[i].shift();
+      const limRT = getTrailLimitsRT();
+      if (advanceTrails) {
+        rtStepCount++;
+        if (limRT) {
+          for (let i = 0; i < n; i++) {
+            if (!rtTrailHistory[i]) rtTrailHistory[i] = [];
+            const p = simToThree(drawPos[i], is2D);
+            rtTrailHistory[i].push({ pos: p, step: rtStepCount });
+            while (rtTrailHistory[i].length > limRT.maxPoints) rtTrailHistory[i].shift();
+            if (limRT.stepWindow != null) {
+              while (rtTrailHistory[i].length > 0 && rtTrailHistory[i][0].step < rtStepCount - limRT.stepWindow) {
+                rtTrailHistory[i].shift();
+              }
+            }
+          }
+        } else {
+          for (let i = 0; i < n; i++) rtTrailHistory[i] = [];
+        }
       }
 
       // Rebuild trail mesh if body count changed
@@ -776,7 +1030,38 @@
       }
       const trailArr = [];
       for (let i = 0; i < n; i++) trailArr.push(rtTrailHistory[i] || []);
-      updateTrailMesh(trailArr, is2D, n);
+      updateTrailMesh(trailLineMesh, trailArr, is2D, n);
+
+      if (drawGhostPos) {
+        if (advanceTrails) {
+          if (limRT) {
+            for (let i = 0; i < n; i++) {
+              if (!rtGhostTrailHistory[i]) rtGhostTrailHistory[i] = [];
+              const p = simToThree(drawGhostPos[i], is2D);
+              rtGhostTrailHistory[i].push({ pos: p, step: rtStepCount });
+              while (rtGhostTrailHistory[i].length > limRT.maxPoints) rtGhostTrailHistory[i].shift();
+              if (limRT.stepWindow != null) {
+                while (rtGhostTrailHistory[i].length > 0 && rtGhostTrailHistory[i][0].step < rtStepCount - limRT.stepWindow) {
+                  rtGhostTrailHistory[i].shift();
+                }
+              }
+            }
+          } else {
+            for (let i = 0; i < n; i++) rtGhostTrailHistory[i] = [];
+          }
+        }
+        if (!ghostTrailLineMesh || ghostTrailLineMesh._nBodies !== n) {
+          ensureGhostTrailMesh(n);
+          ghostTrailLineMesh._nBodies = n;
+        }
+        const ghostTrailArr = [];
+        for (let i = 0; i < n; i++) ghostTrailArr.push(rtGhostTrailHistory[i] || []);
+        updateTrailMesh(ghostTrailLineMesh, ghostTrailArr, is2D, n);
+      } else {
+        disposeGhostTrailMesh();
+      }
+
+      updateForceArrows(drawPos, bodies.accelerations, is2D, n);
 
       // Lock on first body
       if (viewLockedOn && bodyMeshes.length > 0) {
@@ -788,16 +1073,57 @@
       // Body list
       const listEl = document.getElementById('bodyList');
       if (listEl && bodies.names) {
-        let html = '';
+        listEl.innerHTML = '';
         for (let i = 0; i < n; i++) {
           const c = bodies.colors && bodies.colors[i] ? bodies.colors[i] : [0,0,70];
           const color = `hsl(${c[0]},${c[1]}%,${c[2]}%)`;
           const name = bodies.names[i] || `Body ${i}`;
           const mass = bodies.masses ? bodies.masses[i] : '?';
           const massStr = typeof mass === 'number' ? (mass < 0.01 ? mass.toExponential(2) : mass.toPrecision(4)) : mass;
-          html += `<div class="body-item"><span class="body-dot" style="background:${color}"></span><span class="body-name">${name}</span><span class="body-mass">${massStr}</span></div>`;
+
+          const item = document.createElement('div');
+          item.className = 'body-item' + (selectedBodyIndex === i ? ' selected' : '');
+          item.dataset.index = String(i);
+
+          const dot = document.createElement('span');
+          dot.className = 'body-dot';
+          dot.style.background = color;
+
+          const idx = document.createElement('span');
+          idx.className = 'body-idx';
+          idx.textContent = `#${i}`;
+
+          const nameEl = document.createElement('span');
+          nameEl.className = 'body-name';
+          nameEl.textContent = String(name);
+
+          const massEl = document.createElement('span');
+          massEl.className = 'body-mass';
+          massEl.textContent = String(massStr);
+
+          item.appendChild(dot);
+          item.appendChild(idx);
+          item.appendChild(nameEl);
+          item.appendChild(massEl);
+          item.onclick = () => selectBody(i);
+          listEl.appendChild(item);
         }
-        listEl.innerHTML = html;
+      }
+
+      // Honesty / diagnostics (Ethan sim and similar)
+      const honEl = document.getElementById('honestyReadout');
+      if (honEl) {
+        const h = state.honesty;
+        if (h && typeof h.total_energy === 'number') {
+          const fmt = (x) => (Math.abs(x) < 1e-2 || Math.abs(x) > 1e5 ? x.toExponential(4) : x.toPrecision(6));
+          honEl.textContent =
+            `E_total = ${fmt(h.total_energy)}   (ΔE/E₀ = ${(h.energy_drift_pct ?? 0).toFixed(4)}%)\n` +
+            `|L| = ${fmt(h.angular_momentum_mag)}   (ΔL/L₀ = ${(h.angular_momentum_drift_pct ?? 0).toFixed(4)}%)\n` +
+            `dt = ${state.params?.dt ?? '—'}   softening ε = ${h.softening}\n` +
+            `Integrator: ${h.integrator}`;
+        } else if (mode === 'realtime' && wsConnected) {
+          honEl.textContent = 'This simulator does not publish honesty diagnostics.';
+        }
       }
 
       // Performance HUD
@@ -810,8 +1136,39 @@
         document.getElementById('hudDrift').textContent = perf.energy_drift_pct != null ? perf.energy_drift_pct.toFixed(4) + '%' : '—';
       }
 
+      // Play/pause button label
+      const pp = document.getElementById('btnPlayPause');
+      if (pp) pp.textContent = paused ? 'Play' : 'Pause';
+
       // Step info
-      document.getElementById('stepInfo').textContent = `Real-time — ${n} bodies  |  dt=${state.params?.dt ?? '?'}`;
+      document.getElementById('stepInfo').textContent = `Real-time — ${n} bodies  |  dt=${state.params?.dt ?? '?'}  |  ${paused ? 'paused' : 'running'}`;
+    }
+
+    function setVecInputs(prefix, vec) {
+      document.getElementById(prefix + 'X').value = (vec?.[0] ?? 0);
+      document.getElementById(prefix + 'Y').value = (vec?.[1] ?? 0);
+      document.getElementById(prefix + 'Z').value = (vec?.[2] ?? 0);
+    }
+
+    function readVecInputs(prefix) {
+      return [
+        parseFloat(document.getElementById(prefix + 'X').value) || 0,
+        parseFloat(document.getElementById(prefix + 'Y').value) || 0,
+        parseFloat(document.getElementById(prefix + 'Z').value) || 0,
+      ];
+    }
+
+    function selectBody(i) {
+      selectedBodyIndex = i;
+      if (!latestState || !latestState.bodies) return;
+      const b = latestState.bodies;
+      setVecInputs('addPos', b.positions?.[i] ?? [0,0,0]);
+      setVecInputs('addVel', b.velocities?.[i] ?? [0,0,0]);
+      document.getElementById('addMass').value = (b.masses?.[i] ?? 0.001);
+      document.getElementById('addName').value = (b.names?.[i] ?? '');
+      const label = document.getElementById('selectedLabel');
+      if (label) label.textContent = `Selected: #${i} ${b.names?.[i] ?? ''}`;
+      applyRealtimeState(latestState, { advanceTrails: false }); // refresh highlight
     }
 
     async function connectWs() {
@@ -822,6 +1179,7 @@
       disconnectWs();
       clearSimObjects();
       rtTrailHistory = {};
+      rtGhostTrailHistory = {};
       rtStepCount = 0;
 
       const statusEl = document.getElementById('wsStatus');
@@ -886,6 +1244,7 @@
         }
         if (state.type === 'init') {
           rtTrailHistory = {};
+          rtGhostTrailHistory = {};
           rtStepCount = 0;
         }
 
@@ -900,11 +1259,14 @@
         ws = null;
       }
       wsConnected = false;
+      disposeForceArrows();
       document.getElementById('wsStatus').textContent = 'Disconnected';
       document.getElementById('wsStatus').style.color = '';
       document.getElementById('btnConnect').style.display = '';
       document.getElementById('btnDisconnect').style.display = 'none';
       document.getElementById('perfHud').style.display = 'none';
+      const honEl = document.getElementById('honestyReadout');
+      if (honEl) honEl.textContent = 'Connect to Ethan’s small-N sim to see live energy and angular momentum checks.';
     }
 
     function sendWsMessage(msg) {
@@ -973,6 +1335,7 @@
         playRow.style.display = '';
         document.getElementById('perfHud').style.display = 'none';
         disconnectWs();
+        disposeForceArrows();
       } else {
         indicator.className = 'realtime';
         indicator.textContent = 'Real-Time';
@@ -1010,6 +1373,24 @@
         }
       };
       document.getElementById('viewGrid').onclick = () => { if (gridHelper) gridHelper.visible = !gridHelper.visible; };
+
+      const comBtn = document.getElementById('viewComFrame');
+      const syncComBtn = () => {
+        if (!comBtn) return;
+        comBtn.textContent = comFrameEnabled ? 'COM frame ✓' : 'COM frame';
+        comBtn.classList.toggle('primary', comFrameEnabled);
+      };
+      syncComBtn();
+      if (comBtn) {
+        comBtn.onclick = () => {
+          comFrameEnabled = !comFrameEnabled;
+          syncComBtn();
+          rtTrailHistory = {};
+          rtGhostTrailHistory = {};
+          rtStepCount = 0;
+          if (latestState) applyRealtimeState(latestState, { advanceTrails: false });
+        };
+      }
     }
 
     // ======================================================================
@@ -1081,6 +1462,31 @@
     setupPlaybackControls();
     setupSidebar();
 
+    function syncTrailOpacityControls() {
+      const op = document.getElementById('trailOpacity');
+      if (op) op.disabled = trailDisplayMode === 'off';
+    }
+
+    const trailModeSel = document.getElementById('trailModeSelect');
+    if (trailModeSel) {
+      trailModeSel.value = trailDisplayMode;
+      trailModeSel.onchange = function() {
+        trailDisplayMode = this.value;
+        syncTrailOpacityControls();
+        rtTrailHistory = {};
+        rtGhostTrailHistory = {};
+        rtStepCount = 0;
+        if (mode === 'replay' && replayData && trailHistory) {
+          const idx = parseInt(document.getElementById('timeline').value, 10) || 0;
+          for (let i = 0; i < trailHistory.length; i++) trailHistory[i] = [];
+          lastTrailFrameIndex = -1;
+          updateReplayFrame(idx);
+        }
+        if (latestState) applyRealtimeState(latestState, { advanceTrails: false });
+      };
+    }
+    syncTrailOpacityControls();
+
     // Trail opacity
     document.getElementById('trailOpacity').oninput = function() {
       const v = parseInt(this.value, 10);
@@ -1093,6 +1499,15 @@
     // Mode buttons
     document.getElementById('btnModeReplay').onclick = () => setMode('replay');
     document.getElementById('btnModeRealtime').onclick = () => setMode('realtime');
+
+    const chkForces = document.getElementById('chkShowForces');
+    if (chkForces) {
+      chkForces.checked = showForceArrows;
+      chkForces.onchange = () => {
+        showForceArrows = chkForces.checked;
+        if (latestState) applyRealtimeState(latestState, { advanceTrails: false });
+      };
+    }
 
     // Replay controls
     document.getElementById('replayLoad').onclick = () => {
@@ -1118,26 +1533,59 @@
     document.getElementById('btnConnect').onclick = connectWs;
     document.getElementById('btnDisconnect').onclick = disconnectWs;
     document.getElementById('btnReset').onclick = () => sendWsMessage({ type: 'reset', data: {} });
+    document.getElementById('btnPlayPause').onclick = () => {
+      const paused = !!(latestState && latestState.paused);
+      sendWsMessage({ type: 'set_paused', data: { paused: !paused } });
+    };
+    document.getElementById('btnRandomize').onclick = () => {
+      sendWsMessage({ type: 'randomize_bodies', data: {} });
+    };
     document.getElementById('btnUpdateParams').onclick = () => {
       const dt = parseFloat(document.getElementById('paramDt').value);
       if (!isNaN(dt)) sendWsMessage({ type: 'update_params', data: { dt } });
     };
+    const dtSlider = document.getElementById('dtSlider');
+    const paramDtEl = document.getElementById('paramDt');
+    if (dtSlider && paramDtEl) {
+      dtSlider.addEventListener('input', () => {
+        const dt = parseFloat(dtSlider.value);
+        if (!Number.isNaN(dt)) paramDtEl.value = String(dt);
+        if (!wsConnected) return;
+        const now = performance.now();
+        if (now - lastLiveDtSent < 80) return;
+        lastLiveDtSent = now;
+        sendWsMessage({ type: 'update_params', data: { dt } });
+      });
+      paramDtEl.addEventListener('change', () => {
+        const dt = parseFloat(paramDtEl.value);
+        if (Number.isNaN(dt)) return;
+        const smin = parseFloat(dtSlider.min);
+        const smax = parseFloat(dtSlider.max);
+        dtSlider.value = String(Math.min(smax, Math.max(smin, dt)));
+      });
+    }
     document.getElementById('btnAddBody').onclick = () => {
-      const pos = [
-        parseFloat(document.getElementById('addPosX').value) || 0,
-        parseFloat(document.getElementById('addPosY').value) || 0,
-        parseFloat(document.getElementById('addPosZ').value) || 0,
-      ];
+      const pos = readVecInputs('addPos');
+      const vel = readVecInputs('addVel');
       const mass = parseFloat(document.getElementById('addMass').value) || 0.001;
       const name = document.getElementById('addName').value || undefined;
-      sendWsMessage({ type: 'add_body', data: { pos, vel: [0, 0, 0], mass, name, radius: 0.05, color: [180, 60, 70] } });
+      sendWsMessage({ type: 'add_body', data: { pos, vel, mass, name, radius: 0.05, color: [180, 60, 70] } });
+    };
+    document.getElementById('btnUpdateBody').onclick = () => {
+      if (selectedBodyIndex == null) return;
+      const pos = readVecInputs('addPos');
+      const vel = readVecInputs('addVel');
+      const mass = parseFloat(document.getElementById('addMass').value);
+      const name = document.getElementById('addName').value || undefined;
+      sendWsMessage({ type: 'update_body', data: { index: selectedBodyIndex, pos, vel, mass, name } });
+    };
+    document.getElementById('btnRemoveBody').onclick = () => {
+      if (selectedBodyIndex == null) return;
+      sendWsMessage({ type: 'remove_body', data: { index: selectedBodyIndex } });
+      selectedBodyIndex = null;
     };
     document.getElementById('btnCalcVel').onclick = () => {
-      const pos = [
-        parseFloat(document.getElementById('addPosX').value) || 0,
-        parseFloat(document.getElementById('addPosY').value) || 0,
-        parseFloat(document.getElementById('addPosZ').value) || 0,
-      ];
+      const pos = readVecInputs('addPos');
       const mass = parseFloat(document.getElementById('addMass').value) || 0.001;
       sendWsMessage({ type: 'compute_velocity', data: { position: pos, mass, requestId: 'ui' } });
     };
