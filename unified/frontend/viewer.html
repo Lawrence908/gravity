@@ -514,11 +514,21 @@
       return [v[0], v[2] ?? 0, v[1]];
     }
 
-    function disposeForceArrows() {
-      for (const h of forceArrowHelpers) {
-        scene.remove(h);
-        if (h.dispose) h.dispose();
+    function disposeForceArrowHelper(h) {
+      if (!h) return;
+      scene.remove(h);
+      if (h.line) {
+        h.line.geometry?.dispose?.();
+        h.line.material?.dispose?.();
       }
+      if (h.cone) {
+        h.cone.geometry?.dispose?.();
+        h.cone.material?.dispose?.();
+      }
+    }
+
+    function disposeForceArrows() {
+      for (const h of forceArrowHelpers) disposeForceArrowHelper(h);
       forceArrowHelpers = [];
     }
 
