@@ -221,7 +221,7 @@ BODY_COLORS = {
 
 SCENARIOS = {
     "two_body": {
-        "name": "Two-Body Ellipse",
+        "name": "Two-Body Circular Orbit",
         "description": "Clean bound orbit of two masses in the COM frame",
         "factory": create_two_body,
         "G": 1.0,
